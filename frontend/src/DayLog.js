@@ -165,8 +165,8 @@ export default function DayLog({ user }) {
     }
   }, []);
 
-  // Track which item is being hovered (to show handles)
-  const [hoveredId, setHoveredId] = useState(null);
+  // Track which item is currently selected
+  const [selectedId, setSelectedId] = useState(null);
 
   // ── Load today's log ────────────────────────────────────────────────────
 
@@ -258,34 +258,51 @@ export default function DayLog({ user }) {
 
 
   const handleRotateStart = (e, itemKey, currentRotation, rndEl) => {
+    // Stop the click from bubbling up to react-rnd (prevents drag conflicts)
     e.stopPropagation();
-    e.preventDefault();
+    if (e.preventDefault) e.preventDefault();
+
+    // Get the exact center of the specific item we are rotating
     const rect = rndEl.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
-    const startAngle = angleBetween(
-      { x: centerX, y: centerY },
-      { x: e.clientX, y: e.clientY }
-    );
-    rotatingRef.current = { itemKey, startAngle, startRotation: currentRotation || 0, centerX, centerY };
 
+    // Helper to safely get coordinates whether user is on a Mouse or Touch screen
+    const getPos = (ev) => ({
+      x: ev.touches && ev.touches.length > 0 ? ev.touches[0].clientX : ev.clientX,
+      y: ev.touches && ev.touches.length > 0 ? ev.touches[0].clientY : ev.clientY,
+    });
+
+    const startPos = getPos(e.nativeEvent || e);
+    const startAngle = angleBetween({ x: centerX, y: centerY }, startPos);
+    
+    // Create the movement tracker
     const onMove = (moveEvent) => {
-      if (!rotatingRef.current) return;
-      const { startAngle, startRotation, centerX, centerY } = rotatingRef.current;
-      const currentAngle = angleBetween({ x: centerX, y: centerY }, { x: moveEvent.clientX, y: moveEvent.clientY });
+      const currentPos = getPos(moveEvent);
+      const currentAngle = angleBetween({ x: centerX, y: centerY }, currentPos);
       const delta = currentAngle - startAngle;
-      setRotations(prev => ({ ...prev, [itemKey]: startRotation + delta }));
-      setSaved(false);
+      
+      // Update state dynamically based on the starting rotation
+      setRotations(prev => ({ 
+        ...prev, 
+        [itemKey]: (currentRotation || 0) + delta 
+      }));
     };
 
+    // Create the cleanup tracker
     const onUp = () => {
-      rotatingRef.current = null;
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onUp);
+      setSaved(false); // Trigger save state when they let go
     };
 
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    // Attach listeners directly to the document for global tracking
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onUp);
   };
 
   // ── Photo upload ────────────────────────────────────────────────────────
@@ -893,17 +910,31 @@ export default function DayLog({ user }) {
       <div className="dl-canvas-wrap">
         <div className="dl-canvas">
           {/* Date stamp */}
-          <div className="dl-canvas-date">
+          <div
+            className="dl-canvas-date"
+            onMouseDown={(e) => {
+              if (
+                e.target.classList.contains('dl-canvas') ||
+                e.target.classList.contains('dl-canvas-empty') ||
+                e.target.classList.contains('dl-canvas-wrap')
+              ) {
+                setSelectedId(null);
+              }
+            }}
+          >
             <span>{display.weekday}</span>
-            <span>{display.ordinal} {display.month} {display.year}</span>
+            <span>
+              {display.ordinal} {display.month} {display.year}
+            </span>
           </div>
 
           {/* Videos */}
           {videos.map((video, i) => {
-            const isHovered = hoveredId === `video-${video.id}`;
+            const isSelected = selectedId === `video-${video.id}`;
             return (
               <Rnd
                 key={video.id}
+                cancel=".dl-rotate-handle, .dl-canvas-delete"
                 size={{ width: video.width || 400, height: video.height || 300 }}
                 position={{ x: video.pos_x || 30, y: video.pos_y || 40 }}
                 onDragStop={(e, d) => {
@@ -927,7 +958,7 @@ export default function DayLog({ user }) {
                 bounds="parent"
                 enableResizing={ENABLE_CORNERS}
                 resizeHandleStyles={RND_HANDLE_STYLES}
-                resizeHandleComponent={isHovered ? undefined : {
+                resizeHandleComponent={isSelected ? undefined : {
                   topLeft: <div style={{ display: 'none' }} />,
                   topRight: <div style={{ display: 'none' }} />,
                   bottomLeft: <div style={{ display: 'none' }} />,
@@ -935,25 +966,30 @@ export default function DayLog({ user }) {
                 }}
                 minWidth={150}
                 minHeight={100}
-                style={{ cursor: isHovered ? 'grab' : 'auto' }}
+                style={{ cursor: isSelected ? 'grab' : 'auto' }}
               >
                {/* REPLACE dl-rnd-item div inside videos Rnd */}
                 <div
                   className="dl-rnd-item"
-                  onMouseEnter={() => setHoveredId(`video-${video.id}`)}
-                  onMouseLeave={() => setHoveredId(null)}
+                  onMouseDown={() => setSelectedId(`video-${video.id}`)}
+                  onTouchStart={() => setSelectedId(`video-${video.id}`)}
                   style={{
                     width: '100%', height: '100%', position: 'relative',
                     display: 'flex', flexDirection: 'column',
                     transform: `rotate(${rotations[`video-${video.id}`] || 0}deg)`,
                   }}
                 >
-                  {isHovered && (
+                  {isSelected && (
                     <div
                       className="dl-rotate-handle"
                       style={{ opacity: 1 }}
                       onMouseDown={e => {
-                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
+                        // Just grab the parentElement
+                        const el = e.currentTarget.parentElement; 
+                        handleRotateStart(e, `video-${video.id}`, rotations[`video-${video.id}`] || 0, el);
+                      }}
+                      onTouchStart={e => { // Add touch support
+                        const el = e.currentTarget.parentElement;
                         handleRotateStart(e, `video-${video.id}`, rotations[`video-${video.id}`] || 0, el);
                       }}
                       title="Rotate"
@@ -965,7 +1001,7 @@ export default function DayLog({ user }) {
                       Your browser does not support video.
                     </video>
                   </div>
-                  <button className="dl-canvas-delete" style={{ opacity: isHovered ? 1 : 0 }}
+                  <button className="dl-canvas-delete" style={{ opacity: isSelected ? 1 : 0 }}
                     onMouseDown={e => e.stopPropagation()}
                     onClick={e => { e.stopPropagation(); handleDeleteVideo(video.id); }}>×</button>
                 </div>
@@ -975,10 +1011,11 @@ export default function DayLog({ user }) {
 
           {/* Audio */}
           {audios.map((track, i) => {
-            const isHovered = hoveredId === `audio-${track.id}`;
+            const isSelected = selectedId === `audio-${track.id}`;
             return (
               <Rnd
                 key={track.id}
+                cancel=".dl-rotate-handle, .dl-canvas-delete"
                 size={{ width: track.width || 350, height: track.height || 100 }}
                 position={{ x: track.pos_x || 30, y: track.pos_y || 200 }}
                 onDragStop={(e, d) => {
@@ -1002,7 +1039,7 @@ export default function DayLog({ user }) {
                 bounds="parent"
                 enableResizing={ENABLE_CORNERS}
                 resizeHandleStyles={RND_HANDLE_STYLES}
-                resizeHandleComponent={isHovered ? undefined : {
+                resizeHandleComponent={isSelected ? undefined : {
                   topLeft: <div style={{ display: 'none' }} />,
                   topRight: <div style={{ display: 'none' }} />,
                   bottomLeft: <div style={{ display: 'none' }} />,
@@ -1010,13 +1047,13 @@ export default function DayLog({ user }) {
                 }}
                 minWidth={200}
                 minHeight={80}
-                style={{ cursor: isHovered ? 'grab' : 'auto' }}
+                style={{ cursor: isSelected ? 'grab' : 'auto' }}
               >
                 {/* REPLACE dl-rnd-item div inside audios Rnd */}
                 <div
                   className="dl-rnd-item"
-                  onMouseEnter={() => setHoveredId(`audio-${track.id}`)}
-                  onMouseLeave={() => setHoveredId(null)}
+                  onMouseDown={() => setSelectedId(`audio-${track.id}`)}
+                  onTouchStart={() => setSelectedId(`audio-${track.id}`)}
                   style={{
                     width: '100%', height: '100%', position: 'relative',
                     display: 'flex', flexDirection: 'column',
@@ -1024,12 +1061,16 @@ export default function DayLog({ user }) {
                     transform: `rotate(${rotations[`audio-${track.id}`] || 0}deg)`,
                   }}
                 >
-                  {isHovered && (
+                  {isSelected && (
                     <div
                       className="dl-rotate-handle"
                       style={{ opacity: 1 }}
                       onMouseDown={e => {
-                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
+                        const el = e.currentTarget.parentElement; 
+                        handleRotateStart(e, `audio-${track.id}`, rotations[`audio-${track.id}`] || 0, el);
+                      }}
+                      onTouchStart={e => { 
+                        const el = e.currentTarget.parentElement;
                         handleRotateStart(e, `audio-${track.id}`, rotations[`audio-${track.id}`] || 0, el);
                       }}
                       title="Rotate"
@@ -1046,7 +1087,7 @@ export default function DayLog({ user }) {
                       Your browser does not support audio.
                     </audio>
                   </div>
-                  <button className="dl-canvas-delete" style={{ opacity: isHovered ? 1 : 0 }}
+                  <button className="dl-canvas-delete" style={{ opacity: isSelected ? 1 : 0 }}
                     onMouseDown={e => e.stopPropagation()}
                     onClick={e => { e.stopPropagation(); handleDeleteAudio(track.id); }}>×</button>
                 </div>
@@ -1057,10 +1098,11 @@ export default function DayLog({ user }) {
           {/* Uploaded photos as stamps */}
           {photos.map((photo, i) => {
             // Rendered in LogPage for drag/resize, but could also show a static preview here if desired
-            const isHovered = hoveredId === `photo-${photo.id}`;
+            const isSelected = selectedId === `photo-${photo.id}`;
             return (
               <Rnd
                 key={photo.id}
+                cancel=".dl-rotate-handle, .dl-canvas-delete"
                 size={{ width: photo.width || 200, height: photo.height || 200 }}
                 position={{ x: photo.pos_x || 30, y: photo.pos_y || 40 }}
                 onDragStop={(e, d) => {
@@ -1085,7 +1127,7 @@ export default function DayLog({ user }) {
                 enableResizing={ENABLE_CORNERS}
                 resizeHandleStyles={RND_HANDLE_STYLES}
                 // Only show handles on hover via inline style toggle
-                resizeHandleComponent={isHovered ? undefined : {
+                resizeHandleComponent={isSelected ? undefined : {
                   topLeft: <div style={{ display: 'none' }} />,
                   topRight: <div style={{ display: 'none' }} />,
                   bottomLeft: <div style={{ display: 'none' }} />,
@@ -1093,7 +1135,7 @@ export default function DayLog({ user }) {
                 }}
                 minWidth={80}
                 minHeight={80}
-                style={{ cursor: isHovered ? 'grab' : 'auto' }}
+                style={{ cursor: isSelected ? 'grab' : 'auto' }}
               >
                 {/*
                   KEY FIX: This wrapper must NOT have position:absolute,
@@ -1103,20 +1145,24 @@ export default function DayLog({ user }) {
                 <div
                   className="dl-rnd-item"
                   ref={el => { if (el) el._rndEl = el.closest('.react-draggable') || el; }}
-                  onMouseEnter={() => setHoveredId(`photo-${photo.id}`)}
-                  onMouseLeave={() => setHoveredId(null)}
+                  onMouseDown={() => setSelectedId(`photo-${photo.id}`)}
+                  onTouchStart={() => setSelectedId(`photo-${photo.id}`)}
                   style={{
                     width: '100%', height: '100%', position: 'relative',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     transform: `rotate(${rotations[`photo-${photo.id}`] || 0}deg)`,
                   }}
                 >
-                  {isHovered && (
+                  {isSelected && (
                     <div
                       className="dl-rotate-handle"
                       style={{ opacity: 1 }}
                       onMouseDown={e => {
                         const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
+                        handleRotateStart(e, `photo-${photo.id}`, rotations[`photo-${photo.id}`] || 0, el);
+                      }}
+                      onTouchStart={e => {
+                        const el = e.currentTarget.parentElement;
                         handleRotateStart(e, `photo-${photo.id}`, rotations[`photo-${photo.id}`] || 0, el);
                       }}
                       title="Rotate"
@@ -1127,7 +1173,7 @@ export default function DayLog({ user }) {
                   </div>
                   <button
                     className="dl-canvas-delete"
-                    style={{ opacity: isHovered ? 1 : 0 }}
+                    style={{ opacity: isSelected ? 1 : 0 }}
                     onMouseDown={e => e.stopPropagation()}
                     onClick={e => { e.stopPropagation(); handleDeletePhoto(photo.id); }}
                   >×</button>
@@ -1136,93 +1182,94 @@ export default function DayLog({ user }) {
             );
         })}
 
-          {/* Prompt answer rendered like washi tape note */}
-          {answerText && dailyPrompt && (() => {
-            const ans = answers[0];
-            const isHovered = hoveredId === 'answer-0';
-            return (
-              <Rnd
-                key="answer-rnd"
-                size={{ width: ans?.width || 260, height: ans?.height || 120 }}
-                position={{ x: ans?.pos_x ?? 50, y: ans?.pos_y ?? 300 }}
-                onDragStop={(e, d) => {
-                  setAnswers(prev => {
-                    const updated = [...prev];
-                    if (!updated[0]) updated[0] = { pos_x: d.x, pos_y: d.y, width: 260, height: 120 };
-                    else updated[0] = { ...updated[0], pos_x: d.x, pos_y: d.y };
-                    return updated;
-                  });
-                  setSaved(false);
+          {/* ── Prompt Answer ── */}
+          {answerText && dailyPrompt && (
+            <Rnd
+              key="answer-rnd"
+              cancel=".dl-rotate-handle, .dl-canvas-delete"
+              size={{ width: answers[0]?.width || 260, height: answers[0]?.height || 120 }}
+              position={{ x: answers[0]?.pos_x ?? 50, y: answers[0]?.pos_y ?? 300 }}
+              onDragStop={(e, d) => {
+                setAnswers(prev => {
+                  const updated = [...prev];
+                  if (!updated[0]) updated[0] = { pos_x: d.x, pos_y: d.y, width: 260, height: 120 };
+                  else updated[0] = { ...updated[0], pos_x: d.x, pos_y: d.y };
+                  return updated;
+                });
+                setSaved(false);
+              }}
+              onResizeStop={(e, direction, ref, delta, position) => {
+                setAnswers(prev => {
+                  const updated = [...prev];
+                  const entry = updated[0] || {};
+                  updated[0] = {
+                    ...entry,
+                    pos_x: position.x,
+                    pos_y: position.y,
+                    width: parseInt(ref.style.width),
+                    height: parseInt(ref.style.height),
+                  };
+                  return updated;
+                });
+                setSaved(false);
+              }}
+              bounds="parent"
+              enableResizing={ENABLE_CORNERS}
+              resizeHandleStyles={RND_HANDLE_STYLES}
+              resizeHandleComponent={selectedId === 'answer-0' ? undefined : {
+                topLeft: <div style={{ display: 'none' }} />,
+                topRight: <div style={{ display: 'none' }} />,
+                bottomLeft: <div style={{ display: 'none' }} />,
+                bottomRight: <div style={{ display: 'none' }} />,
+              }}
+              minWidth={150}
+              minHeight={60}
+              style={{ cursor: selectedId === 'answer-0' ? 'grab' : 'pointer' }}
+            >
+              <div
+                className="dl-rnd-item dl-rnd-answer"
+                onMouseDown={() => setSelectedId('answer-0')}
+                onTouchStart={() => setSelectedId('answer-0')}
+                style={{
+                  width: '100%', height: '100%', position: 'relative',
+                  display: 'flex', flexDirection: 'column',
+                  gap: '0.35rem', padding: '0.5rem 0.75rem', boxSizing: 'border-box',
+                  transform: `rotate(${rotations['answer-0'] || 0}deg)`,
                 }}
-                onResizeStop={(e, direction, ref, delta, position) => {
-                  setAnswers(prev => {
-                    const updated = [...prev];
-                    const entry = updated[0] || {};
-                    updated[0] = {
-                      ...entry,
-                      pos_x: position.x,
-                      pos_y: position.y,
-                      width: parseInt(ref.style.width),
-                      height: parseInt(ref.style.height),
-                    };
-                    return updated;
-                  });
-                  setSaved(false);
-                }}
-                bounds="parent"
-                enableResizing={ENABLE_CORNERS}
-                resizeHandleStyles={RND_HANDLE_STYLES}
-                resizeHandleComponent={isHovered ? undefined : {
-                  topLeft: <div style={{ display: 'none' }} />,
-                  topRight: <div style={{ display: 'none' }} />,
-                  bottomLeft: <div style={{ display: 'none' }} />,
-                  bottomRight: <div style={{ display: 'none' }} />,
-                }}
-                minWidth={150}
-                minHeight={60}
-                style={{ cursor: isHovered ? 'grab' : 'auto' }}
               >
-                {/* REPLACE dl-rnd-item div inside the answer Rnd */}
-                <div
-                  className="dl-rnd-item dl-rnd-answer"
-                  onMouseEnter={() => setHoveredId('answer-0')}
-                  onMouseLeave={() => setHoveredId(null)}
-                  style={{
-                    width: '100%', height: '100%', position: 'relative',
-                    display: 'flex', flexDirection: 'column',
-                    gap: '0.35rem', padding: '0.5rem 0.75rem', boxSizing: 'border-box',
-                    transform: `rotate(${rotations['answer-0'] || 0}deg)`,
-                  }}
-                >
-                  {isHovered && (
-                    <div
-                      className="dl-rotate-handle"
-                      style={{ opacity: 1 }}
-                      onMouseDown={e => {
-                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
-                        handleRotateStart(e, 'answer-0', rotations['answer-0'] || 0, el);
-                      }}
-                      title="Rotate"
-                    >↻</div>
-                  )}
-                  <div className="dl-canvas-answer-label" style={{ pointerEvents: 'none', flexShrink: 0 }}>
-                    {dailyPrompt.prompt_text}
-                  </div>
-                  <div className="dl-canvas-washi" style={{ flex: 1, overflow: 'visible', pointerEvents: 'none' }}>
-                    <span className="dl-canvas-answer-text">{answerText}</span>
-                  </div>
+                {selectedId === 'answer-0' && (
+                  <div
+                    className="dl-rotate-handle"
+                    style={{ opacity: 1 }}
+                    onMouseDown={e => {
+                      const el = e.currentTarget.parentElement;
+                      handleRotateStart(e, 'answer-0', rotations['answer-0'] || 0, el);
+                    }}
+                    onTouchStart={e => {
+                      const el = e.currentTarget.parentElement;
+                      handleRotateStart(e, 'answer-0', rotations['answer-0'] || 0, el);
+                    }}
+                    title="Rotate"
+                  >↻</div>
+                )}
+                <div className="dl-canvas-answer-label" style={{ pointerEvents: 'none', flexShrink: 0 }}>
+                  {dailyPrompt.prompt_text}
                 </div>
-              </Rnd>
-            );
-          })()}
+                <div className="dl-canvas-washi" style={{ flex: 1, overflow: 'visible', pointerEvents: 'none' }}>
+                  <span className="dl-canvas-answer-text">{answerText}</span>
+                </div>
+              </div>
+            </Rnd>
+          )}
 
 
-          {/* Stickers */}
+          {/* ── Stickers ── */}
           {stickers.map((sticker, i) => {
-            const isHovered = hoveredId === `sticker-${sticker.id}`;
+            const isSelected = selectedId === `sticker-${sticker.id}`;
             return (
               <Rnd
                 key={sticker.id}
+                cancel=".dl-rotate-handle, .dl-canvas-delete"
                 size={{ width: sticker.width || 100, height: sticker.height || 100 }}
                 position={{ x: sticker.pos_x || 200, y: sticker.pos_y || 100 }}
                 onDragStop={(e, d) => {
@@ -1246,7 +1293,7 @@ export default function DayLog({ user }) {
                 bounds="parent"
                 enableResizing={ENABLE_CORNERS}
                 resizeHandleStyles={RND_HANDLE_STYLES}
-                resizeHandleComponent={isHovered ? undefined : {
+                resizeHandleComponent={isSelected ? undefined : {
                   topLeft: <div style={{ display: 'none' }} />,
                   topRight: <div style={{ display: 'none' }} />,
                   bottomLeft: <div style={{ display: 'none' }} />,
@@ -1254,25 +1301,28 @@ export default function DayLog({ user }) {
                 }}
                 minWidth={40}
                 minHeight={40}
-                style={{ cursor: isHovered ? 'grab' : 'auto' }}
+                style={{ cursor: isSelected ? 'grab' : 'pointer' }}
               >
-                {/* REPLACE dl-rnd-item div inside stickers Rnd */}
                 <div
                   className="dl-rnd-item"
-                  onMouseEnter={() => setHoveredId(`sticker-${sticker.id}`)}
-                  onMouseLeave={() => setHoveredId(null)}
+                  onMouseDown={() => setSelectedId(`sticker-${sticker.id}`)}
+                  onTouchStart={() => setSelectedId(`sticker-${sticker.id}`)}
                   style={{
                     width: '100%', height: '100%', position: 'relative',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     transform: `rotate(${rotations[`sticker-${sticker.id}`] || 0}deg)`,
                   }}
                 >
-                  {isHovered && (
+                  {isSelected && (
                     <div
                       className="dl-rotate-handle"
                       style={{ opacity: 1 }}
                       onMouseDown={e => {
                         const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
+                        handleRotateStart(e, `sticker-${sticker.id}`, rotations[`sticker-${sticker.id}`] || 0, el);
+                      }}
+                      onTouchStart={e => {
+                        const el = e.currentTarget.parentElement;
                         handleRotateStart(e, `sticker-${sticker.id}`, rotations[`sticker-${sticker.id}`] || 0, el);
                       }}
                       title="Rotate"
@@ -1281,7 +1331,9 @@ export default function DayLog({ user }) {
                   <img src={`/${sticker.asset_path}`} alt={sticker.asset_name}
                     style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }}
                     onError={e => { e.target.style.display = 'none'; }} />
-                  <button className="dl-canvas-delete" style={{ opacity: isHovered ? 1 : 0 }}
+                  
+                  {/* Delete button only shows if selected */}
+                  <button className="dl-canvas-delete" style={{ opacity: isSelected ? 1 : 0, pointerEvents: isSelected ? 'auto' : 'none' }}
                     onMouseDown={e => e.stopPropagation()}
                     onClick={e => { e.stopPropagation(); handleDeleteSticker(sticker.id); }}>×</button>
                 </div>

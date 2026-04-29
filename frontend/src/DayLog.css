@@ -480,9 +480,16 @@
 }
 
 
-.dl-canvas-item:hover .dl-canvas-delete,
-.dl-canvas-sticker:hover .dl-canvas-delete {
+.dl-canvas-delete {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.dl-rnd-item:hover .dl-canvas-delete,
+.dl-rnd-item.is-selected .dl-canvas-delete {
   opacity: 1;
+  pointer-events: auto;
 }
 
 /* ── Stamp photo ─ */
@@ -585,12 +592,12 @@
 /* ADDED — rotation handle shown on hover */
 .dl-rotate-handle {
   position: absolute;
-  top: -28px;
+  top: -14px;   /* closer so still inside hover zone */
   left: 50%;
   transform: translateX(-50%);
-  width: 22px;
-  height: 22px;
-  background: #fff;
+  width: 24px;
+  height: 24px;
+  background: white;
   border: 2px solid #aad4e8;
   border-radius: 50%;
   display: flex;
@@ -598,15 +605,13 @@
   justify-content: center;
   font-size: 0.75rem;
   cursor: grab;
-  z-index: 25;
+  z-index: 50;
+
   opacity: 0;
-  transition: opacity 0.15s;
-  user-select: none;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
 }
 
-.dl-rnd-item:hover .dl-rotate-handle {
-  opacity: 1;
-}
 
 .dl-rotate-handle:active {
   cursor: grabbing;
