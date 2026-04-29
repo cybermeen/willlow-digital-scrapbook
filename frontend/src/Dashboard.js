@@ -16,6 +16,7 @@ function Dashboard({ user, onLogout }) {
   // and we've navigated them to the DayLog tab
   const [claimingReward, setClaimingReward] = useState(false);
 
+  const [testMode, setTestMode] = useState(false);
   useEffect(() => {
     refreshStreak();
   }, []);
@@ -40,6 +41,10 @@ function Dashboard({ user, onLogout }) {
   const handleRewardClaimed = () => {
     setClaimingReward(false);
     refreshStreak();
+  };
+
+  const handleTestModeChange = (isTest) => {
+    setTestMode(isTest);
   };
 
   const navItems = [
@@ -102,6 +107,7 @@ function Dashboard({ user, onLogout }) {
             lastUpdated={lastUpdated}
             onTaskChange={refreshStreak}
             onClaimReward={handleClaimReward}
+            onTestModeChange={handleTestModeChange}  
           />
         )}
 
@@ -112,6 +118,7 @@ function Dashboard({ user, onLogout }) {
             claimingReward={claimingReward}
             onRewardClaimed={handleRewardClaimed}
             goToTab={setActiveTab}
+            forceRewardsUnlocked={testMode}
           />
         )}
 

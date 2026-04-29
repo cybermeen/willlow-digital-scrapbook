@@ -167,7 +167,7 @@ function StreakCelebrationModal({ onClaimReward, onDismiss }) {
 
 // ─── Streak Widget ────────────────────────────────────────────────────────────
 
-function StreakWidget({ lastUpdated, onClaimReward }) {
+function StreakWidget({ lastUpdated, onClaimReward, onTestModeChange }) {
   const [realStreak, setRealStreak] = useState(null);
   const [testStreak, setTestStreak]   = useState(null); // null = use real data
   const [showTestPanel, setShowTestPanel] = useState(false);
@@ -196,8 +196,10 @@ function StreakWidget({ lastUpdated, onClaimReward }) {
   const msg = STREAK_MESSAGES[Math.min(displayCount, 7)];
 
   // Test button handler — only affects UI, never touches the API
+  // Update handleTestStreak to call the new prop:
   const handleTestStreak = (n) => {
     setTestStreak(n);
+    if (onTestModeChange) onTestModeChange(n >= 7);   // ← ADD THIS LINE
     if (n >= 7) {
       setShowCelebration(true);
     } else {
@@ -294,7 +296,9 @@ function StreakWidget({ lastUpdated, onClaimReward }) {
                 ))}
               </div>
               {testStreak !== null && (
-                <button className="streak-test-reset" onClick={() => { setTestStreak(null); setShowCelebration(false); }}>
+                <button className="streak-test-reset" onClick={() => { setTestStreak(null); setShowCelebration(false); 
+                  if (onTestModeChange) onTestModeChange(false);
+                }}>
                   ↩ Back to real data
                 </button>
               )}
@@ -486,7 +490,7 @@ function CompletedSection({ tasks, onToggle, onDelete }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-function ToDo({ onTaskChange, lastUpdated, onClaimReward }) {
+function ToDo({ onTaskChange, lastUpdated, onClaimReward, onTestModeChange }) {
   const [tasks, setTasks]     = useState({ today: [], thisWeek: [], upcoming: [], completed: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -578,7 +582,7 @@ function ToDo({ onTaskChange, lastUpdated, onClaimReward }) {
       </div>
 
       {/* Streak widget — centered, compact */}
-      <StreakWidget lastUpdated={lastUpdated} onClaimReward={onClaimReward} />
+      <StreakWidget lastUpdated={lastUpdated} onClaimReward={onClaimReward} onTestModeChange={onTestModeChange} />
 
       {error && (
         <div className="todo-error" role="alert">

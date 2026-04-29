@@ -90,8 +90,7 @@ function angleBetween(pivot, point) {
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-export default function DayLog({ user }) {
-  const date    = todayStr();
+export default function DayLog({ user, streak: streakProp, claimingReward, onRewardClaimed, goToTab, forceRewardsUnlocked }) {  const date    = todayStr();
   const display = formatDisplayDate(date);
 
   // Log & content state
@@ -142,6 +141,15 @@ export default function DayLog({ user }) {
   }
   }, []);
 
+  useEffect(() => {
+    if (claimingReward) {
+      setShowStreakRewards(true);
+      setStreakRewardTab('stickers');
+      setShowLibrary(false);
+      setShowClaimModal(false);
+    }
+  }, [claimingReward]);
+
   /* Streak Rewards panel*/
   const [showStreakRewards,    setShowStreakRewards]    = useState(false);
   const [streakRewardTab,      setStreakRewardTab]      = useState('stickers'); // 'stickers' | 'prompts'
@@ -152,6 +160,7 @@ export default function DayLog({ user }) {
   // Save state
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
+  const [newlyPlacedNoteId, setNewlyPlacedNoteId] = useState(null);
 
   const fetchPromptByCategory = useCallback(async (category) => {
     if (!category) return;
@@ -475,7 +484,12 @@ export default function DayLog({ user }) {
       if (res.ok) {
         const newNote = await res.json();
         setNotes(prev => [...prev, newNote]);
+        setNewlyPlacedNoteId(newNote.id);          // ← highlight it
+        setTimeout(() => setNewlyPlacedNoteId(null), 4000); 
         setSaved(false);
+        if (claimingReward && onRewardClaimed) {   // ← notify Dashboard
+          onRewardClaimed();
+        }
       }
     } catch (err) { console.error('Place emoji sticker error:', err); }
     setShowStreakRewards(false);
@@ -618,7 +632,7 @@ export default function DayLog({ user }) {
     );
   }
 
-  const rewardsUnlocked = streak?.rewardsUnlocked;
+  const rewardsUnlocked = forceRewardsUnlocked ||streak?.rewardsUnlocked;
   const currentStreak   = streak?.currentStreak || 0;
 
   // Emoji notes (filter notes that start with EMOJI:)
@@ -1344,8 +1358,90 @@ export default function DayLog({ user }) {
             );
           })}
 
+{/* ── Emoji Stickers (streak rewards placed by user) ── */}
+          {emojiNotes.map((note) => {
+            const isSelected = selectedId === `note-${note.id}`;
+            const isNew = newlyPlacedNoteId === note.id;
+            const emoji = note.content.replace('EMOJI:', '');
+            return (
+              <Rnd
+                key={note.id}
+                cancel=".dl-rotate-handle, .dl-canvas-delete"
+                size={{ width: note.width || 80, height: note.height || 80 }}
+                position={{ x: note.pos_x || 100, y: note.pos_y || 100 }}
+                onDragStop={(e, d) => {
+                  setNotes(prev => prev.map(n =>
+                    n.id === note.id ? { ...n, pos_x: d.x, pos_y: d.y } : n
+                  ));
+                  setSaved(false);
+                }}
+                onResizeStop={(e, direction, ref, delta, position) => {
+                  setNotes(prev => prev.map(n =>
+                    n.id === note.id ? {
+                      ...n,
+                      width: parseInt(ref.style.width),
+                      height: parseInt(ref.style.height),
+                      pos_x: position.x,
+                      pos_y: position.y,
+                    } : n
+                  ));
+                  setSaved(false);
+                }}
+                bounds="parent"
+                enableResizing={ENABLE_CORNERS}
+                resizeHandleStyles={RND_HANDLE_STYLES}
+                resizeHandleComponent={isSelected ? undefined : {
+                  topLeft: <div style={{ display: 'none' }} />,
+                  topRight: <div style={{ display: 'none' }} />,
+                  bottomLeft: <div style={{ display: 'none' }} />,
+                  bottomRight: <div style={{ display: 'none' }} />,
+                }}
+                minWidth={40}
+                minHeight={40}
+                style={{ cursor: isSelected ? 'grab' : 'pointer' }}
+              >
+                <div
+                  className={`dl-rnd-item dl-emoji-note${isNew ? ' dl-emoji-note--new' : ''}`}
+                  onMouseDown={() => setSelectedId(`note-${note.id}`)}
+                  onTouchStart={() => setSelectedId(`note-${note.id}`)}
+                  style={{
+                    width: '100%', height: '100%', position: 'relative',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transform: `rotate(${rotations[`note-${note.id}`] || 0}deg)`,
+                    fontSize: note.font_size || 48,
+                    userSelect: 'none',
+                    lineHeight: 1,
+                  }}
+                >
+                  {isSelected && (
+                    <div
+                      className="dl-rotate-handle"
+                      style={{ opacity: 1 }}
+                      onMouseDown={e => {
+                        const el = e.currentTarget.parentElement;
+                        handleRotateStart(e, `note-${note.id}`, rotations[`note-${note.id}`] || 0, el);
+                      }}
+                      onTouchStart={e => {
+                        const el = e.currentTarget.parentElement;
+                        handleRotateStart(e, `note-${note.id}`, rotations[`note-${note.id}`] || 0, el);
+                      }}
+                      title="Rotate"
+                    >↻</div>
+                  )}
+                  <span style={{ pointerEvents: 'none' }}>{emoji}</span>
+                  <button
+                    className="dl-canvas-delete"
+                    style={{ opacity: isSelected ? 1 : 0, pointerEvents: isSelected ? 'auto' : 'none' }}
+                    onMouseDown={e => e.stopPropagation()}
+                    onClick={e => { e.stopPropagation(); handleDeleteEmojiNote(note.id); }}
+                  >×</button>
+                </div>
+              </Rnd>
+            );
+          })}
+
           {/* Empty state */}
-          {photos.length === 0 && videos.length === 0 && audios.length === 0 && stickers.length === 0 && !answerText && (
+          {photos.length === 0 && videos.length === 0 && audios.length === 0 && stickers.length === 0 && emojiNotes.length === 0 && !answerText && (
             <div className="dl-canvas-empty">
               <p>Your log is empty — add photos, videos, audio, answer the prompt, or place stickers!</p>
             </div>
