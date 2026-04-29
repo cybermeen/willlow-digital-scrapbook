@@ -101,56 +101,44 @@ function LogPage({ log, side }) {
 
       {!loading && detail && (
         <>
-          {/* Photos as stamps */}
+          {/* REPLACE photos map in LogPage */}
           {detail.photos?.map((photo, i) => (
-            <div
-              key={photo.id}
-              className="sb-stamp-wrap"
-              style={{
-                top: `${(photo.pos_y || 60) + i * 15}px`,
-                left: `${(photo.pos_x || (side === 'left' ? 20 : 30)) + i * 10}px`,
-              }}
-            >
+            <div key={photo.id} className="sb-stamp-wrap" style={{
+              top: `${(photo.pos_y || 60) + i * 15}px`,
+              left: `${(photo.pos_x || (side === 'left' ? 20 : 30)) + i * 10}px`,
+              transform: `rotate(${photo.rotation || 0}deg)`,  // ADD
+            }}>
               <WashiTapeDecor index={i} />
               <div className="sb-stamp">
-                <img
-                  src={`/${photo.file_path}`}
-                  alt={photo.original_name || 'memory'}
-                />
+                <img src={`/${photo.file_path}`} alt={photo.original_name || 'memory'} />
               </div>
             </div>
           ))}
 
-          {/* Videos */}
+          {/* REPLACE videos map in LogPage */}
           {detail.videos?.map(video => (
-            <div
-              key={video.id}
-              className="sb-media-item sb-video-item"
-              style={{
-                top: `${video.pos_y || 80}px`,
-                left: `${video.pos_x || (side === 'left' ? 40 : 30)}px`,
-                width: `${video.width || 320}px`,
-                height: `${video.height || 180}px`,
-                zIndex: video.z_index || 0,
-              }}
-            >
+            <div key={video.id} className="sb-media-item sb-video-item" style={{
+              top: `${video.pos_y || 80}px`,
+              left: `${video.pos_x || (side === 'left' ? 40 : 30)}px`,
+              width: `${video.width || 320}px`,
+              height: `${video.height || 180}px`,
+              zIndex: video.z_index || 0,
+              transform: `rotate(${video.rotation || 0}deg)`,  // ADD
+            }}>
               <video src={`/${video.file_path}`} controls muted playsInline />
             </div>
           ))}
 
-          {/* Audio */}
+          {/* REPLACE audio map in LogPage */}
           {detail.audio?.map(audio => (
-            <div
-              key={audio.id}
-              className="sb-media-item sb-audio-item"
-              style={{
-                top: `${audio.pos_y || 180}px`,
-                left: `${audio.pos_x || (side === 'left' ? 40 : 30)}px`,
-                width: `${audio.width || 300}px`,
-                height: `${audio.height || 90}px`,
-                zIndex: audio.z_index || 0,
-              }}
-            >
+            <div key={audio.id} className="sb-media-item sb-audio-item" style={{
+              top: `${audio.pos_y || 180}px`,
+              left: `${audio.pos_x || (side === 'left' ? 40 : 30)}px`,
+              width: `${audio.width || 300}px`,
+              height: `${audio.height || 90}px`,
+              zIndex: audio.z_index || 0,
+              transform: `rotate(${audio.rotation || 0}deg)`,  // ADD
+            }}>
               <div className="sb-audio-card">
                 <span className="sb-audio-label">🎵 {audio.original_name || 'Audio'}</span>
                 <audio src={`/${audio.file_path}`} controls />
@@ -158,18 +146,15 @@ function LogPage({ log, side }) {
             </div>
           ))}
 
-          {/* Prompt answers */}
+          {/* REPLACE answers map in LogPage */}
           {detail.answers?.map(answer => (
-            <div
-              key={answer.id}
-              className="sb-answer-wrap"
-              style={{
-                top: `${answer.pos_y || 80}px`,
-                left: `${answer.pos_x || (side === 'left' ? 20 : 15)}px`,
-                width: `${answer.width || 260}px`,
-                minHeight: `${answer.height || 120}px`,
-              }}
-            >
+            <div key={answer.id} className="sb-answer-wrap" style={{
+              top: `${answer.pos_y || 80}px`,
+              left: `${answer.pos_x || (side === 'left' ? 20 : 15)}px`,
+              width: `${answer.width || 260}px`,
+              minHeight: `${answer.height || 120}px`,
+              transform: `rotate(${answer.rotation || 0}deg)`,  // ADD
+            }}>
               <div className="sb-answer-prompt">{answer.prompt_text}:</div>
               <div className="sb-answer-washi">
                 <span className="sb-answer-text">{answer.answer_text}</span>
@@ -177,23 +162,17 @@ function LogPage({ log, side }) {
             </div>
           ))}
 
-          {/* Stickers */}
+          {/* REPLACE stickers map in LogPage */}
           {detail.stickers?.map((sticker) => (
-            <div
-              key={sticker.id}
-              className="sb-sticker"
-              style={{
-                top: `${sticker.pos_y || 120}px`,
-                left: `${sticker.pos_x || 160}px`,
-                width: `${sticker.width || 60}px`,
-                height: `${sticker.height || 60}px`,
-              }}
-            >
-              <img
-                src={`${BACKEND_URL}/assets/tape/${sticker.asset_path.split('/').pop()}`}
-                alt={sticker.asset_name}
-                onError={e => { e.target.style.display = 'none'; }}
-              />
+            <div key={sticker.id} className="sb-sticker" style={{
+              top: `${sticker.pos_y || 120}px`,
+              left: `${sticker.pos_x || 160}px`,
+              width: `${sticker.width || 60}px`,
+              height: `${sticker.height || 60}px`,
+              transform: `rotate(${sticker.rotation || 0}deg)`,  // ADD
+            }}>
+              <img src={`${BACKEND_URL}/assets/tape/${sticker.asset_path.split('/').pop()}`}
+                alt={sticker.asset_name} onError={e => { e.target.style.display = 'none'; }} />
             </div>
           ))}
         </>
@@ -336,7 +315,7 @@ export default function Scrapbook() {
 
       {/* Book spread */}
       <div className="sb-book-wrap" ref={bookRef}>
-        <ScrapbookPage leftLog={leftLog} rightLog={rightLog} />
+        <ScrapbookPage key={pageIndex} leftLog={leftLog} rightLog={rightLog} />
       </div>
 
       {/* Pagination arrows */}

@@ -83,6 +83,10 @@ const RND_HANDLE_STYLES = {
 
 const ENABLE_CORNERS = { topLeft: true, topRight: true, bottomLeft: true, bottomRight: true };
 
+/** Returns the angle in degrees between a pivot and a point */
+function angleBetween(pivot, point) {
+  return Math.atan2(point.y - pivot.y, point.x - pivot.x) * (180 / Math.PI);
+}
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
@@ -100,6 +104,8 @@ export default function DayLog({ user }) {
   const [notes,    setNotes]    = useState([]); // emoji stickers stored as notes
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState(null);
+  const [rotations, setRotations] = useState({}); // keyed by "type-id"
+  const rotatingRef = useRef(null); // { itemKey, startAngle, startRotation, centerX, centerY }
 
   // Streak state
   const [streak, setStreak] = useState(null);
@@ -186,6 +192,15 @@ export default function DayLog({ user }) {
         // Load notes (emoji stickers are stored here)
         setNotes(logData.notes || []);
 
+        // ADD after setNotes(logData.notes || []);
+        const initRotations = {};
+        (logData.photos   || []).forEach(p => { if (p.rotation)  initRotations[`photo-${p.id}`]   = p.rotation; });
+        (logData.videos   || []).forEach(v => { if (v.rotation)  initRotations[`video-${v.id}`]   = v.rotation; });
+        (logData.audio    || []).forEach(a => { if (a.rotation)  initRotations[`audio-${a.id}`]   = a.rotation; });
+        (logData.stickers || []).forEach(s => { if (s.rotation)  initRotations[`sticker-${s.id}`] = s.rotation; });
+        (logData.answers  || []).forEach(a => { if (a.rotation)  initRotations[`answer-${a.id}`]  = a.rotation; });
+        setRotations(initRotations);
+
         if (logData.answers?.length > 0) {
           const savedAnswer = logData.answers[0];
           setAnswerText(savedAnswer.answer_text || '');
@@ -240,6 +255,38 @@ export default function DayLog({ user }) {
   }, [assets.length]);
 
   const openLibrary = () => { setShowLibrary(true); loadAssets(); };
+
+
+  const handleRotateStart = (e, itemKey, currentRotation, rndEl) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const rect = rndEl.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const startAngle = angleBetween(
+      { x: centerX, y: centerY },
+      { x: e.clientX, y: e.clientY }
+    );
+    rotatingRef.current = { itemKey, startAngle, startRotation: currentRotation || 0, centerX, centerY };
+
+    const onMove = (moveEvent) => {
+      if (!rotatingRef.current) return;
+      const { startAngle, startRotation, centerX, centerY } = rotatingRef.current;
+      const currentAngle = angleBetween({ x: centerX, y: centerY }, { x: moveEvent.clientX, y: moveEvent.clientY });
+      const delta = currentAngle - startAngle;
+      setRotations(prev => ({ ...prev, [itemKey]: startRotation + delta }));
+      setSaved(false);
+    };
+
+    const onUp = () => {
+      rotatingRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   // ── Photo upload ────────────────────────────────────────────────────────
 
@@ -508,11 +555,11 @@ export default function DayLog({ user }) {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          photos,
-          videos,
-          audios,
-          answers: layoutAnswers,
-          stickers,
+          photos:   photos.map(p => ({ ...p, rotation: rotations[`photo-${p.id}`]   || 0 })),
+          videos:   videos.map(v => ({ ...v, rotation: rotations[`video-${v.id}`]   || 0 })),
+          audios:   audios.map(a => ({ ...a, rotation: rotations[`audio-${a.id}`]   || 0 })),
+          answers:  layoutAnswers.map(a => ({ ...a, rotation: rotations[`answer-${a.id || 0}`] || 0 })),
+          stickers: stickers.map(s => ({ ...s, rotation: rotations[`sticker-${s.id}`] || 0 })),
           notes,
         }),
       });
@@ -890,38 +937,37 @@ export default function DayLog({ user }) {
                 minHeight={100}
                 style={{ cursor: isHovered ? 'grab' : 'auto' }}
               >
+               {/* REPLACE dl-rnd-item div inside videos Rnd */}
                 <div
                   className="dl-rnd-item"
                   onMouseEnter={() => setHoveredId(`video-${video.id}`)}
                   onMouseLeave={() => setHoveredId(null)}
                   style={{
-                    width: '100%',
-                    height: '100%',
-                    position: 'relative',
-                    display: 'flex',
-                    flexDirection: 'column',
+                    width: '100%', height: '100%', position: 'relative',
+                    display: 'flex', flexDirection: 'column',
+                    transform: `rotate(${rotations[`video-${video.id}`] || 0}deg)`,
                   }}
                 >
+                  {isHovered && (
+                    <div
+                      className="dl-rotate-handle"
+                      style={{ opacity: 1 }}
+                      onMouseDown={e => {
+                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
+                        handleRotateStart(e, `video-${video.id}`, rotations[`video-${video.id}`] || 0, el);
+                      }}
+                      title="Rotate"
+                    >↻</div>
+                  )}
                   <div style={{ flex: 1, pointerEvents: 'auto', overflow: 'hidden' }}>
-                    <video
-                      src={`/${video.file_path}`}
-                      controls
-                      preload="metadata"
-                      className="dl-video-player"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    >
+                    <video src={`/${video.file_path}`} controls preload="metadata"
+                      className="dl-video-player" style={{ width: '100%', height: '100%', objectFit: 'cover' }}>
                       Your browser does not support video.
                     </video>
                   </div>
-                  <button
-                    className="dl-canvas-delete"
-                    style={{ opacity: isHovered ? 1 : 0 }}
+                  <button className="dl-canvas-delete" style={{ opacity: isHovered ? 1 : 0 }}
                     onMouseDown={e => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteVideo(video.id);
-                    }}
-                  >×</button>
+                    onClick={e => { e.stopPropagation(); handleDeleteVideo(video.id); }}>×</button>
                 </div>
               </Rnd>
             );
@@ -966,46 +1012,43 @@ export default function DayLog({ user }) {
                 minHeight={80}
                 style={{ cursor: isHovered ? 'grab' : 'auto' }}
               >
+                {/* REPLACE dl-rnd-item div inside audios Rnd */}
                 <div
                   className="dl-rnd-item"
                   onMouseEnter={() => setHoveredId(`audio-${track.id}`)}
                   onMouseLeave={() => setHoveredId(null)}
                   style={{
-                    width: '100%',
-                    height: '100%',
-                    position: 'relative',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    padding: '0.5rem',
-                    boxSizing: 'border-box',
-                    gap: '0.35rem',
+                    width: '100%', height: '100%', position: 'relative',
+                    display: 'flex', flexDirection: 'column',
+                    padding: '0.5rem', boxSizing: 'border-box', gap: '0.35rem',
+                    transform: `rotate(${rotations[`audio-${track.id}`] || 0}deg)`,
                   }}
                 >
+                  {isHovered && (
+                    <div
+                      className="dl-rotate-handle"
+                      style={{ opacity: 1 }}
+                      onMouseDown={e => {
+                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
+                        handleRotateStart(e, `audio-${track.id}`, rotations[`audio-${track.id}`] || 0, el);
+                      }}
+                      title="Rotate"
+                    >↻</div>
+                  )}
                   <div className="dl-audio-header" style={{ pointerEvents: 'none', flexShrink: 0 }}>
                     <span className="dl-audio-icon">🎵</span>
                     <span className="dl-audio-name">{track.original_name}</span>
                     <span className="dl-media-size">{formatFileSize(track.file_size)}</span>
                   </div>
                   <div style={{ flex: 1, pointerEvents: 'auto', overflow: 'hidden' }}>
-                    <audio
-                      src={`/${track.file_path}`}
-                      controls
-                      preload="metadata"
-                      className="dl-audio-player"
-                      style={{ width: '100%', height: '100%' }}
-                    >
+                    <audio src={`/${track.file_path}`} controls preload="metadata"
+                      className="dl-audio-player" style={{ width: '100%', height: '100%' }}>
                       Your browser does not support audio.
                     </audio>
                   </div>
-                  <button
-                    className="dl-canvas-delete"
-                    style={{ opacity: isHovered ? 1 : 0 }}
+                  <button className="dl-canvas-delete" style={{ opacity: isHovered ? 1 : 0 }}
                     onMouseDown={e => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteAudio(track.id);
-                    }}
-                  >×</button>
+                    onClick={e => { e.stopPropagation(); handleDeleteAudio(track.id); }}>×</button>
                 </div>
               </Rnd>
             );
@@ -1056,36 +1099,37 @@ export default function DayLog({ user }) {
                   KEY FIX: This wrapper must NOT have position:absolute,
                   must fill 100% of the Rnd box, and must use pointerEvents:none
                   on non-interactive children so Rnd receives all mouse events.
-                */}
+                */} 
                 <div
                   className="dl-rnd-item"
+                  ref={el => { if (el) el._rndEl = el.closest('.react-draggable') || el; }}
                   onMouseEnter={() => setHoveredId(`photo-${photo.id}`)}
                   onMouseLeave={() => setHoveredId(null)}
                   style={{
-                    width: '100%',
-                    height: '100%',
-                    position: 'relative',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    transform: `rotate(${photo.rotation || 0}deg)`,
+                    width: '100%', height: '100%', position: 'relative',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transform: `rotate(${rotations[`photo-${photo.id}`] || 0}deg)`,
                   }}
                 >
-                  {/* pointerEvents:none so the img doesn't steal drag events */}
+                  {isHovered && (
+                    <div
+                      className="dl-rotate-handle"
+                      style={{ opacity: 1 }}
+                      onMouseDown={e => {
+                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
+                        handleRotateStart(e, `photo-${photo.id}`, rotations[`photo-${photo.id}`] || 0, el);
+                      }}
+                      title="Rotate"
+                    >↻</div>
+                  )}
                   <div style={{ width: '100%', height: '100%', pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <StampPhoto
-                      src={`/${photo.file_path}`}
-                      alt={photo.original_name}
-                    />
+                    <StampPhoto src={`/${photo.file_path}`} alt={photo.original_name} />
                   </div>
                   <button
                     className="dl-canvas-delete"
                     style={{ opacity: isHovered ? 1 : 0 }}
                     onMouseDown={e => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeletePhoto(photo.id);
-                    }}
+                    onClick={e => { e.stopPropagation(); handleDeletePhoto(photo.id); }}
                   >×</button>
                 </div>
               </Rnd>
@@ -1138,36 +1182,33 @@ export default function DayLog({ user }) {
                 minHeight={60}
                 style={{ cursor: isHovered ? 'grab' : 'auto' }}
               >
-                {/*
-                  KEY FIX for text: No position:absolute here.
-                  The washi note fills the Rnd box completely.
-                  Text uses pointerEvents:none so drag works.
-                */}
+                {/* REPLACE dl-rnd-item div inside the answer Rnd */}
                 <div
                   className="dl-rnd-item dl-rnd-answer"
                   onMouseEnter={() => setHoveredId('answer-0')}
                   onMouseLeave={() => setHoveredId(null)}
                   style={{
-                    width: '100%',
-                    height: '100%',
-                    position: 'relative',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.35rem',
-                    padding: '0.5rem 0.75rem',
-                    boxSizing: 'border-box',
+                    width: '100%', height: '100%', position: 'relative',
+                    display: 'flex', flexDirection: 'column',
+                    gap: '0.35rem', padding: '0.5rem 0.75rem', boxSizing: 'border-box',
+                    transform: `rotate(${rotations['answer-0'] || 0}deg)`,
                   }}
                 >
-                  <div
-                    className="dl-canvas-answer-label"
-                    style={{ pointerEvents: 'none', flexShrink: 0 }}
-                  >
-                    {dailyPrompt.prompt_text.split(' ').slice(0, 5).join(' ')}…
+                  {isHovered && (
+                    <div
+                      className="dl-rotate-handle"
+                      style={{ opacity: 1 }}
+                      onMouseDown={e => {
+                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
+                        handleRotateStart(e, 'answer-0', rotations['answer-0'] || 0, el);
+                      }}
+                      title="Rotate"
+                    >↻</div>
+                  )}
+                  <div className="dl-canvas-answer-label" style={{ pointerEvents: 'none', flexShrink: 0 }}>
+                    {dailyPrompt.prompt_text}
                   </div>
-                  <div
-                    className="dl-canvas-washi"
-                    style={{ flex: 1, overflow: 'auto', pointerEvents: 'none' }}
-                  >
+                  <div className="dl-canvas-washi" style={{ flex: 1, overflow: 'visible', pointerEvents: 'none' }}>
                     <span className="dl-canvas-answer-text">{answerText}</span>
                   </div>
                 </div>
@@ -1215,34 +1256,34 @@ export default function DayLog({ user }) {
                 minHeight={40}
                 style={{ cursor: isHovered ? 'grab' : 'auto' }}
               >
+                {/* REPLACE dl-rnd-item div inside stickers Rnd */}
                 <div
                   className="dl-rnd-item"
                   onMouseEnter={() => setHoveredId(`sticker-${sticker.id}`)}
                   onMouseLeave={() => setHoveredId(null)}
                   style={{
-                    width: '100%',
-                    height: '100%',
-                    position: 'relative',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
+                    width: '100%', height: '100%', position: 'relative',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transform: `rotate(${rotations[`sticker-${sticker.id}`] || 0}deg)`,
                   }}
                 >
-                  <img
-                    src={`/${sticker.asset_path}`}
-                    alt={sticker.asset_name}
+                  {isHovered && (
+                    <div
+                      className="dl-rotate-handle"
+                      style={{ opacity: 1 }}
+                      onMouseDown={e => {
+                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
+                        handleRotateStart(e, `sticker-${sticker.id}`, rotations[`sticker-${sticker.id}`] || 0, el);
+                      }}
+                      title="Rotate"
+                    >↻</div>
+                  )}
+                  <img src={`/${sticker.asset_path}`} alt={sticker.asset_name}
                     style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }}
-                    onError={e => { e.target.style.display = 'none'; }}
-                  />
-                  <button
-                    className="dl-canvas-delete"
-                    style={{ opacity: isHovered ? 1 : 0 }}
+                    onError={e => { e.target.style.display = 'none'; }} />
+                  <button className="dl-canvas-delete" style={{ opacity: isHovered ? 1 : 0 }}
                     onMouseDown={e => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteSticker(sticker.id);
-                    }}
-                  >×</button>
+                    onClick={e => { e.stopPropagation(); handleDeleteSticker(sticker.id); }}>×</button>
                 </div>
               </Rnd>
             );
