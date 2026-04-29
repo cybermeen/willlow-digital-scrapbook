@@ -380,15 +380,22 @@ exports.savePromptAnswer = async (req, res) => {
 exports.updatePromptAnswer = async (req, res) => {
   try {
     const { answerId } = req.params;
-    const { answer_text, pos_x, pos_y, width, height, z_index } = req.body;
+    // 1. We added prompt_id to the destructured body here:
+    const { prompt_id, answer_text, pos_x, pos_y, width, height, z_index } = req.body;
+    
     const ownership = await db.query(`SELECT log_id FROM prompt_answers WHERE id = $1`, [answerId]);
     if (!ownership.rows.length) return res.status(404).json({ error: 'Not found' });
+    
     const isOwner = await verifyLogOwnership(ownership.rows[0].log_id, req.user.id);
     if (!isOwner) return res.status(403).json({ error: 'Access denied' });
+    
     const result = await db.query(
-      `UPDATE prompt_answers SET answer_text=COALESCE($1,answer_text), pos_x=COALESCE($2,pos_x), pos_y=COALESCE($3,pos_y), width=COALESCE($4,width), height=COALESCE($5,height), z_index=COALESCE($6,z_index) WHERE id=$7 RETURNING *`,
-      [answer_text, pos_x, pos_y, width, height, z_index, answerId]
+      // 2. We added prompt_id=COALESCE($7,prompt_id) to the SQL query, and shifted id to $8
+      `UPDATE prompt_answers SET answer_text=COALESCE($1,answer_text), pos_x=COALESCE($2,pos_x), pos_y=COALESCE($3,pos_y), width=COALESCE($4,width), height=COALESCE($5,height), z_index=COALESCE($6,z_index), prompt_id=COALESCE($7,prompt_id) WHERE id=$8 RETURNING *`,
+      // 3. We added prompt_id to the array of variables passed to SQL
+      [answer_text, pos_x, pos_y, width, height, z_index, prompt_id, answerId]
     );
+    
     res.json(result.rows[0]);
   } catch (err) {
     console.error('updatePromptAnswer error:', err);

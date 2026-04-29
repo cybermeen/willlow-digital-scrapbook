@@ -180,19 +180,18 @@ export default function DayLog({ user }) {
           fetch(`${API}/prompts/daily`, { credentials: 'include' }),
           fetch('/api/progress/streak', { credentials: 'include' }),
         ]);
+        
         if (!logRes.ok) throw new Error('Failed to load log');
         const logData = await logRes.json();
+        
         setLog(logData.log);
         setPhotos(logData.photos   || []);
         setVideos(logData.videos   || []);
-        setAudios(logData.audio     || []);
+        setAudios(logData.audio    || []);
         setStickers(logData.stickers || []);
-        setAnswers(logData.answers   || []);
-
-        // Load notes (emoji stickers are stored here)
+        setAnswers(logData.answers  || []);
         setNotes(logData.notes || []);
 
-        // ADD after setNotes(logData.notes || []);
         const initRotations = {};
         (logData.photos   || []).forEach(p => { if (p.rotation)  initRotations[`photo-${p.id}`]   = p.rotation; });
         (logData.videos   || []).forEach(v => { if (v.rotation)  initRotations[`video-${v.id}`]   = v.rotation; });
@@ -201,6 +200,7 @@ export default function DayLog({ user }) {
         (logData.answers  || []).forEach(a => { if (a.rotation)  initRotations[`answer-${a.id}`]  = a.rotation; });
         setRotations(initRotations);
 
+        // THE CRITICAL FIX: Only set defaults if no answer exists
         if (logData.answers?.length > 0) {
           const savedAnswer = logData.answers[0];
           setAnswerText(savedAnswer.answer_text || '');
@@ -211,16 +211,18 @@ export default function DayLog({ user }) {
             category: savedAnswer.category || 'gratitude',
           });
         } else {
-          await fetchPromptByCategory(promptType);
+          if (promptRes.ok) {
+            const defaultPrompt = await promptRes.json();
+            setDailyPrompt(defaultPrompt);
+            setPromptType(defaultPrompt.category || 'gratitude');
+          } else {
+            await fetchPromptByCategory('gratitude');
+          }
         }
-
-        if (promptRes.ok) setDailyPrompt(await promptRes.json());
-        setPromptType('gratitude');
 
         if (streakRes.ok) {
           const streakData = await streakRes.json();
           setStreak(streakData);
-          // Show a brief celebration if rewards just became available
           if (streakData.rewardsUnlocked) {
             const celebKey = `willow_streak_claimed_${user?.id || 'anon'}`;
             if (!localStorage.getItem(celebKey)) {
@@ -514,6 +516,7 @@ export default function DayLog({ user }) {
     try {
       const answerState = localAnswer || answers[0] || {};
       const answerPayload = {
+        prompt_id: dailyPrompt.id,
         answer_text: answerText,
         pos_x: answerState.pos_x || 0,
         pos_y: answerState.pos_y || 0,

@@ -82,7 +82,7 @@
   border-right: 1px solid rgba(0,0,0,0.06);
   /* ADD — animation origin for flip */
   transform-origin: right center;
-  animation: flipInLeft 0.55s cubic-bezier(0.25, 1, 0.5, 1) both;
+  animation: flipInLeft 0.95s cubic-bezier(0.25, 1, 0.5, 1) both;
 }
 
 .sb-page--right {
@@ -102,7 +102,7 @@
   border-left: 1px solid rgba(0,0,0,0.06);
   /* ADD — animation origin for flip */
   transform-origin: left center;
-  animation: flipInRight 0.55s cubic-bezier(0.25, 1, 0.5, 1) both;
+  animation: flipInRight 0.95s cubic-bezier(0.25, 1, 0.5, 1) both;
 }
 
 /* ─── Page Flip Animations ──────────────────────────────────── */
