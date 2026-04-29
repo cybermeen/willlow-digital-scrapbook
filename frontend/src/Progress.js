@@ -28,8 +28,8 @@ function ProgressRing({ percentage, size = 180, stroke = 14 }) {
   }, [percentage]);
 
   const getColor = (pct) => {
-    if (pct >= 100) return '#27ae60';
-    if (pct >= 60)  return '#5c7a5c';
+    if (pct >= 100) return '#e6ad93';
+    if (pct >= 60)  return '#e8d5cc';
     if (pct >= 30)  return '#d4820a';
     return '#c0392b';
   };
@@ -111,7 +111,7 @@ function BarChart({ history }) {
 
   const barColor = (pct) => {
     if (pct >= 100) return '#27ae60';
-    if (pct >= 60)  return '#5c7a5c';
+    if (pct >= 60)  return '#c8c86a';
     if (pct >= 30)  return '#d4820a';
     if (pct > 0)    return '#c0392b';
     return '#e8ede8';
@@ -155,7 +155,7 @@ function BarChart({ history }) {
   );
 }
 
-// ─── Streak flame display ─────────────────────────────────────────────────────
+// ─── Streak display ─────────────────────────────────────────────────────
 function StreakDisplay({ current, longest }) {
   const flames = Math.min(current, 7);
 
@@ -168,7 +168,7 @@ function StreakDisplay({ current, longest }) {
             className={`flame ${i < flames ? 'flame--lit' : 'flame--unlit'}`}
             style={{ animationDelay: `${i * 120}ms` }}
           >
-            {i < flames ? '🔥' : '·'}
+            {i < flames ? '⚡' : '·'}
           </span>
         ))}
       </div>
@@ -289,14 +289,14 @@ function Progress({ lastUpdated}) {
 
         {/* Streak */}
         <div className="progress-card progress-card--streak">
-          <h2 className="card-title">Streak 🔥</h2>
+          <h2 className="card-title">Streak 🌱</h2>
           <StreakDisplay
             current={overall.currentStreak}
             longest={overall.longestStreak}
           />
         </div>
 
-        {/* Average */}
+        {/* Average 
         <div className="progress-card progress-card--avg">
           <h2 className="card-title">Overall Average</h2>
           <div className="avg-display">
@@ -312,7 +312,7 @@ function Progress({ lastUpdated}) {
             </div>
             <p className="avg-sublabel">across all tracked days</p>
           </div>
-        </div>
+        </div> */}
 
       </div>
 

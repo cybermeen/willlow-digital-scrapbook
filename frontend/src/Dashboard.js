@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ToDo from './ToDo';
 import Progress from './Progress';
 import DayLog from './DayLog';
@@ -7,6 +7,40 @@ import './Dashboard.css';
 
 function Dashboard({ user, onLogout }) {
   const [activeTab, setActiveTab] = useState('today');
+
+  // Streak state — used for nav dot indicator
+  const [streak, setStreak] = useState({ currentStreak: 0, rewardsUnlocked: false });
+  const [lastUpdated, setLastUpdated] = useState(Date.now());
+
+  // claimingReward: true when the user clicked "Claim Reward" in ToDo
+  // and we've navigated them to the DayLog tab
+  const [claimingReward, setClaimingReward] = useState(false);
+
+  useEffect(() => {
+    refreshStreak();
+  }, []);
+
+  const refreshStreak = () => {
+    fetch('/api/progress/streak', { credentials: 'include' })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) setStreak(data);
+        setLastUpdated(Date.now());
+      })
+      .catch(err => console.error('Streak fetch failed:', err));
+  };
+
+  // Called when user clicks "Claim Your Reward" inside the celebration modal
+  const handleClaimReward = () => {
+    setClaimingReward(true);
+    setActiveTab('daylog');
+  };
+
+  // Called by DayLog once the user has actually clicked a sticker to unlock
+  const handleRewardClaimed = () => {
+    setClaimingReward(false);
+    refreshStreak();
+  };
 
   const navItems = [
     { id: 'daylog',    label: 'Day Log' },
@@ -18,9 +52,6 @@ function Dashboard({ user, onLogout }) {
   const initials = user?.displayName
     ? user.displayName.charAt(0).toUpperCase()
     : user?.email?.charAt(0).toUpperCase() || '?';
-
-  const [lastUpdated, setLastUpdated] = useState(Date.now());
-  const handleTaskChange = () => setLastUpdated(Date.now());
 
   return (
     <div className="dashboard">
@@ -34,8 +65,18 @@ function Dashboard({ user, onLogout }) {
           {navItems.map(item => (
             <button
               key={item.id}
-              className={`nav-btn ${activeTab === item.id ? 'nav-btn--active' : ''}`}
-              onClick={() => setActiveTab(item.id)}
+              className={[
+                'nav-btn',
+                activeTab === item.id ? 'nav-btn--active' : '',
+                item.id === 'daylog' && streak.rewardsUnlocked ? 'nav-btn--reward' : '',
+              ].filter(Boolean).join(' ')}
+              onClick={() => {
+                // If leaving daylog while claiming, cancel the claim flow
+                if (activeTab === 'daylog' && item.id !== 'daylog') {
+                  setClaimingReward(false);
+                }
+                setActiveTab(item.id);
+              }}
             >
               {item.label}
             </button>
@@ -51,10 +92,32 @@ function Dashboard({ user, onLogout }) {
       </header>
 
       <main className="dashboard-main">
-        {activeTab === 'today'     && <Progress lastUpdated={lastUpdated} />}
-        {activeTab === 'todo'      && <ToDo user={user} onTaskChange={handleTaskChange} />}
-        {activeTab === 'daylog'    && <DayLog user={user} />}
-        {activeTab === 'scrapbook' && <Scrapbook user={user} />}
+        {activeTab === 'today' && (
+          <Progress lastUpdated={lastUpdated} />
+        )}
+
+        {activeTab === 'todo' && (
+          <ToDo
+            user={user}
+            lastUpdated={lastUpdated}
+            onTaskChange={refreshStreak}
+            onClaimReward={handleClaimReward}
+          />
+        )}
+
+        {activeTab === 'daylog' && (
+          <DayLog
+            user={user}
+            streak={streak}
+            claimingReward={claimingReward}
+            onRewardClaimed={handleRewardClaimed}
+            goToTab={setActiveTab}
+          />
+        )}
+
+        {activeTab === 'scrapbook' && (
+          <Scrapbook user={user} />
+        )}
       </main>
     </div>
   );

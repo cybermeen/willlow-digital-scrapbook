@@ -125,10 +125,23 @@ export default function DayLog({ user }) {
   const [assets,        setAssets]        = useState([]);
   const [assetsLoading, setAssetsLoading] = useState(false);
 
-  // Streak Rewards panel
+  useEffect(() => {
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('highlight') === 'new-sticker') {
+    // 1. Find the new sticker element
+    // 2. Add a CSS class called .sticker-highlight
+    // 3. Scroll to it
+    const el = document.getElementById('new-unicorn-sticker');
+    if (el) el.classList.add('streak-dot--latest'); // Reuse your bounce animation!
+  }
+  }, []);
+
+  /* Streak Rewards panel*/
   const [showStreakRewards,    setShowStreakRewards]    = useState(false);
   const [streakRewardTab,      setStreakRewardTab]      = useState('stickers'); // 'stickers' | 'prompts'
   const [showUnlockCelebration, setShowUnlockCelebration] = useState(false);
+  const [showClaimModal, setShowClaimModal] = useState(false);
+  
 
   // Save state
   const [saving, setSaving] = useState(false);
@@ -194,8 +207,10 @@ export default function DayLog({ user }) {
           setStreak(streakData);
           // Show a brief celebration if rewards just became available
           if (streakData.rewardsUnlocked) {
-            setShowUnlockCelebration(true);
-            setTimeout(() => setShowUnlockCelebration(false), 4000);
+            const celebKey = `willow_streak_claimed_${user?.id || 'anon'}`;
+            if (!localStorage.getItem(celebKey)) {
+              setShowClaimModal(true);
+            }
           }
         }
 
@@ -400,6 +415,17 @@ export default function DayLog({ user }) {
     setShowStreakRewards(false);
   };
 
+  const handleClaimStreakSticker = async (emoji) => {
+    await handlePlaceEmojiSticker(emoji);
+    localStorage.setItem(`willow_streak_claimed_${user?.id || 'anon'}`, '1');
+    setShowClaimModal(false);
+  };
+
+  const handleDismissClaimModal = () => {
+    localStorage.setItem(`willow_streak_claimed_${user?.id || 'anon'}`, '1');
+    setShowClaimModal(false);
+  };
+
   const handleDeleteEmojiNote = async (noteId) => {
     try {
       await fetch(`${API}/notes/${noteId}`, { method: 'DELETE', credentials: 'include' });
@@ -546,6 +572,36 @@ export default function DayLog({ user }) {
           </div>
         </div>
       )}
+      {/* ── Streak Claim Modal ── */}
+      {showClaimModal && (
+        <div className="dl-claim-overlay">
+          <div className="dl-claim-modal">
+            <div className="dl-claim-confetti">🎊 🏆 🎊</div>
+            <h2 className="dl-claim-title">🔥 7-Day Streak!</h2>
+            <p className="dl-claim-sub">
+              You completed every task for 7 days in a row.<br />
+              Pick a sticker to claim as your reward!
+            </p>
+            <div className="dl-claim-sticker-grid">
+              {STREAK_EMOJI_STICKERS.map(({ emoji, label }) => (
+                <button
+                  key={emoji}
+                  className="dl-claim-sticker-btn"
+                  onClick={() => handleClaimStreakSticker(emoji)}
+                  title={`Claim ${label}`}
+                >
+                  <span className="dl-claim-sticker-emoji">{emoji}</span>
+                  <span className="dl-claim-sticker-label">{label}</span>
+                </button>
+              ))}
+            </div>
+            <button className="dl-claim-later" onClick={handleDismissClaimModal}>
+              Claim later
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Left Panel ── */}
       <div className="dl-panel">
         {/* Streak mini badge — always visible if streak exists */}
@@ -738,12 +794,26 @@ export default function DayLog({ user }) {
               {!assetsLoading && assets.length === 0 && (
                 <p className="dl-library-empty">No assets found</p>
               )}
-              {assets.map(asset => (
-                <button key={asset.id} className="dl-asset-btn" onClick={() => handlePlaceSticker(asset)} title={asset.name}>
-                  <img src={`/${asset.file_path}`} alt={asset.name}
-                    onError={e => { e.target.style.display = 'none'; }} />
-                </button>
-              ))}
+              {assets.map((asset, idx) => {
+                const NUM_LOCKED = 3;
+                const isLocked = idx >= assets.length - NUM_LOCKED && !rewardsUnlocked;
+                return (
+                  <button
+                    key={asset.id}
+                    className={`dl-asset-btn${isLocked ? ' dl-asset-btn--locked' : ''}`}
+                    onClick={() => { if (!isLocked) handlePlaceSticker(asset); }}
+                    title={isLocked ? '🔒 Complete a 7-day streak to unlock!' : asset.name}
+                    disabled={isLocked}
+                  >
+                    <img
+                      src={`/${asset.file_path}`}
+                      alt={asset.name}
+                      onError={e => { e.target.style.display = 'none'; }}
+                    />
+                    {isLocked && <span className="dl-asset-lock-icon">🔒</span>}
+                  </button>
+                );
+              })}
             </div>
             <button className="dl-library-back" onClick={() => setShowLibrary(false)}>◀</button>
           </div>
