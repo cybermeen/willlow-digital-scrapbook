@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import './Scrapbook.css';
 
+const BACKEND_URL = 'http://localhost:5000'; 
 const API = '/api/scrapbook';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -41,7 +42,8 @@ function ScrapbookPage({ leftLog, rightLog }) {
       {/* Left page */}
       <div className="sb-page sb-page--left">
         {leftLog ? (
-          <LogPage log={leftLog} side="left" />
+          // KEY PROP
+          <LogPage key={`left-${leftLog.log_date}`} log={leftLog} side="left" />
         ) : (
           <div className="sb-page-empty" />
         )}
@@ -53,7 +55,7 @@ function ScrapbookPage({ leftLog, rightLog }) {
       {/* Right page */}
       <div className="sb-page sb-page--right">
         {rightLog ? (
-          <LogPage log={rightLog} side="right" />
+          <LogPage key={`right-${rightLog.log_date}`} log={rightLog} side="right" />
         ) : (
           <div className="sb-page-empty" />
         )}
@@ -188,7 +190,7 @@ function LogPage({ log, side }) {
               }}
             >
               <img
-                src={`/uploads/${sticker.asset_path}`}
+                src={`${BACKEND_URL}/assets/tape/${sticker.asset_path.split('/').pop()}`}
                 alt={sticker.asset_name}
                 onError={e => { e.target.style.display = 'none'; }}
               />
