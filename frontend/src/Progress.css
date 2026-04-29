@@ -62,7 +62,7 @@
 
 .card-title {
   font-family: 'Cormorant Garamond', serif;
-  font-size: 1.2rem;
+  font-size: 1.4rem;
   font-weight: 600;
   color: #3d5c3d;
   margin: 0 0 1.25rem;
@@ -173,7 +173,7 @@
 }
 
 .flame {
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   transition: transform 0.2s;
 }
 

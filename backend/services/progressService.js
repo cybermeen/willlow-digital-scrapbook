@@ -122,6 +122,10 @@ const ProgressService = {
   },
 
   async getDashboardStats(userId) {
+    // Always recalculate streak live — never read the stale cached value
+    // from the users table, which only updates when calculateStreak() is called.
+    const { currentStreak, longestStreak } = await this.calculateStreak(userId);
+
     const todayStr = localToday();
 
     const { rows: todayRows } = await db.query(
@@ -144,11 +148,6 @@ const ProgressService = {
       [userId]
     );
 
-    const { rows: userRows } = await db.query(
-      `SELECT streak, longest_streak FROM users WHERE user_id = $1`,
-      [userId]
-    );
-
     return {
       today: {
         completed_tasks:    completedToday,
@@ -157,8 +156,8 @@ const ProgressService = {
       },
       overall: {
         averageCompletion: parseInt(avgRows[0].average_completion) || 0,
-        currentStreak:     parseInt(userRows[0]?.streak)          || 0,
-        longestStreak:     parseInt(userRows[0]?.longest_streak)  || 0,
+        currentStreak,
+        longestStreak,
       }
     };
   },

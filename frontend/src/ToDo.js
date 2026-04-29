@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './ToDo.css';
 
 const API_URL = '/api/todo';
@@ -15,9 +15,7 @@ function parseDateOnly(dateStr) {
 
 function formatDueDate(dateStr) {
   const d = parseDateOnly(dateStr);
-  return d
-    ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : '';
+  return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 }
 
 function formatCompletedAt(dateStr) {
@@ -41,52 +39,273 @@ function priorityStyle(priority) {
   }
 }
 
+// ─── Streak messages per day count ───────────────────────────────────────────
+
+const STREAK_MESSAGES = [
+  { text: "Log your tasks and start your streak!", emoji: "🌱" },
+  { text: "Day 1 done! The journey begins!",       emoji: "🌿" },
+  { text: "2 days strong — you're warming up!",    emoji: "💪" },
+  { text: "3 days! You're building real momentum!", emoji: "🔥" },
+  { text: "4 days in — this is becoming a habit!", emoji: "⚡" },
+  { text: "5 days! You're almost unstoppable!",    emoji: "🌟" },
+  { text: "ONE more day for the big reward!",      emoji: "🎯" },
+  { text: "PERFECT WEEK! Claim your reward!",      emoji: "🏆" },
+];
+
+// ─── Celebration Modal ────────────────────────────────────────────────────────
+
+function StreakCelebrationModal({ onClaimReward, onDismiss }) {
+  const CONFETTI_COLORS = [
+    '#ff6b6b','#ffd93d','#6bcb77','#4d96ff',
+    '#ff6ec7','#c77dff','#ff9f43','#fff176',
+    '#80cbc4','#ffab40',
+  ];
+
+  // Pre-generate deterministic confetti pieces
+  const pieces = Array.from({ length: 55 }, (_, i) => ({
+    id: i,
+    color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+    left: `${(i * 1.85) % 100}%`,
+    delay: `${((i * 0.09) % 3).toFixed(2)}s`,
+    duration: `${(2.4 + (i * 0.13) % 2.2).toFixed(2)}s`,
+    size: `${9 + (i * 3) % 9}px`,
+    angle: `${(i * 41) % 360}deg`,
+    drift: `${-70 + (i * 11) % 140}px`,
+    shape: i % 3 === 0 ? 'circle' : i % 3 === 1 ? 'rect' : 'diamond',
+  }));
+
+  // Firework burst positions (scattered around the modal)
+  const bursts = [
+    { top: '10%', left: '8%'  },
+    { top: '6%',  left: '30%' },
+    { top: '12%', left: '55%' },
+    { top: '8%',  left: '78%' },
+    { top: '22%', left: '92%' },
+    { top: '75%', left: '5%'  },
+    { top: '80%', left: '88%' },
+    { top: '50%', left: '96%' },
+  ];
+
+  return (
+    <div className="celebration-overlay" onClick={e => e.target === e.currentTarget && onDismiss()}>
+      {/* Confetti rain */}
+      {pieces.map(p => (
+        <div
+          key={p.id}
+          className={`confetti-piece confetti-piece--${p.shape}`}
+          style={{
+            '--color':    p.color,
+            '--left':     p.left,
+            '--delay':    p.delay,
+            '--duration': p.duration,
+            '--size':     p.size,
+            '--angle':    p.angle,
+            '--drift':    p.drift,
+          }}
+        />
+      ))}
+
+      {/* Firework bursts */}
+      {bursts.map((pos, i) => (
+        <div
+          key={i}
+          className="firework-burst"
+          style={{ top: pos.top, left: pos.left, '--delay': `${(i * 0.28).toFixed(2)}s` }}
+        >
+          {['✨','🌟','⭐','💥','✦'].map((s, j) => (
+            <span key={j} className="firework-spark" style={{ '--angle': `${j * 72}deg`, '--i': j }}>{s}</span>
+          ))}
+        </div>
+      ))}
+
+      {/* Modal card */}
+      <div className="celebration-card">
+        {/* Animated trophy row */}
+        <div className="celebration-trophies">
+          <span className="celeb-trophy celeb-trophy--left">🌟</span>
+          <span className="celeb-trophy celeb-trophy--center">🏆</span>
+          <span className="celeb-trophy celeb-trophy--right">🌟</span>
+        </div>
+
+        <h1 className="celebration-title">Perfect Week!</h1>
+        <div className="celebration-streak-badge">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <span key={i} className="celeb-leaf" style={{ animationDelay: `${i * 0.1}s` }}>🍃</span>
+          ))}
+        </div>
+        <p className="celebration-subtitle">
+          You completed <strong>every single task</strong> for 7 days straight.
+          <br />You're absolutely legendary! 🔥
+        </p>
+
+        {/* Sticker reward preview */}
+        <div className="celebration-reward-preview">
+          <p className="celebration-reward-label">Your reward is waiting in the Day Log ✨</p>
+          <div className="celebration-sticker-row">
+            {['🌟','⚡','🦋','🎉','🌈','🏆','💫'].map((s, i) => (
+              <span
+                key={i}
+                className="celebration-sticker"
+                style={{ '--i': i, animationDelay: `${0.6 + i * 0.08}s` }}
+              >
+                {s}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <button className="celebration-claim-btn" onClick={onClaimReward}>
+          🎁 Claim Your Reward
+        </button>
+        <button className="celebration-later-btn" onClick={onDismiss}>
+          I'll claim it later
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Streak Widget ────────────────────────────────────────────────────────────
- 
-function StreakWidget({ lastUpdated }) {
-  const [streak, setStreak] = useState(null);
-  const [prevStreak, setPrevStreak] = useState(null);
+
+function StreakWidget({ lastUpdated, onClaimReward }) {
+  const [realStreak, setRealStreak] = useState(null);
+  const [testStreak, setTestStreak]   = useState(null); // null = use real data
+  const [showTestPanel, setShowTestPanel] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
- 
+  const prevUnlockedRef = useRef(false);
+
+  // Fetch real streak data
   useEffect(() => {
     fetch('/api/progress/streak', { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data) return;
-        setStreak(data);
-        if (data.rewardsUnlocked && prevStreak !== null && !prevStreak.rewardsUnlocked) {
+        // Only auto-trigger celebration when real streak transitions to unlocked
+        if (data.rewardsUnlocked && !prevUnlockedRef.current) {
           setShowCelebration(true);
-          setTimeout(() => setShowCelebration(false), 3000);
         }
-        setPrevStreak(data);
+        prevUnlockedRef.current = data.rewardsUnlocked;
+        setRealStreak(data);
       })
       .catch(() => {});
   }, [lastUpdated]);
- 
-  if (!streak) return null;
- 
-  const { currentStreak, rewardsUnlocked } = streak;
-  const filledDots = Math.min(currentStreak, 7);
- 
+
+  // The displayed streak — test overrides real for UI/testing only
+  const displayCount   = testStreak !== null ? testStreak : (realStreak?.currentStreak || 0);
+  const displayUnlocked = displayCount >= 7;
+  const msg = STREAK_MESSAGES[Math.min(displayCount, 7)];
+
+  // Test button handler — only affects UI, never touches the API
+  const handleTestStreak = (n) => {
+    setTestStreak(n);
+    if (n >= 7) {
+      setShowCelebration(true);
+    } else {
+      setShowCelebration(false);
+    }
+  };
+
+  const handleClaimClick = () => {
+    setShowCelebration(false);
+    if (onClaimReward) onClaimReward();
+  };
+
   return (
-    <div className="streak-widget streak-widget--minimal">
-      <div className="streak-dots streak-dots--minimal">
-        {Array.from({ length: 7 }).map((_, i) => (
-          <span
-            key={i}
-            className={`streak-dot ${i < filledDots ? 'streak-dot--filled' : 'streak-dot--empty'}`}
-            aria-label={`Day ${i + 1}${i < filledDots ? ' completed' : ''}`}
+    <>
+      {/* ── Full-screen Celebration Modal ── */}
+      {showCelebration && (
+        <StreakCelebrationModal
+          onClaimReward={handleClaimClick}
+          onDismiss={() => setShowCelebration(false)}
+        />
+      )}
+
+      {/* ── Compact Centered Widget ── */}
+      <div className="streak-widget-wrap">
+        <div className={`streak-widget ${displayUnlocked ? 'streak-widget--unlocked' : ''}`}>
+
+          {/* Title row */}
+          <div className="streak-widget-header">
+            <span className={`streak-fire ${displayUnlocked ? 'streak-fire--lit' : ''}`}>
+              {displayUnlocked ? '🔥' : '🕯️'}
+            </span>
+            <span className="streak-day-count">{displayCount}</span>
+            <span className="streak-day-label">/ 7 day streak</span>
+          </div>
+
+          {/* 7 leaf counters */}
+          <div className="streak-leaves">
+            {Array.from({ length: 7 }).map((_, i) => {
+              const filled = i < displayCount;
+              const isCurrent = i === displayCount - 1 && displayCount > 0 && displayCount <= 7;
+              return (
+                <div
+                  key={i}
+                  className={`streak-leaf${filled ? ' streak-leaf--filled' : ''}${isCurrent ? ' streak-leaf--latest' : ''}`}
+                  title={`Day ${i + 1}${filled ? ' ✓' : ''}`}
+                >
+                  {filled ? '🍃' : <span className="streak-leaf-inner" />}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Progress bar */}
+          <div className="streak-bar-track">
+            <div className="streak-bar-fill" style={{ width: `${(displayCount / 7) * 100}%` }} />
+          </div>
+
+          {/* Motivational message */}
+          <p className={`streak-motivation ${displayUnlocked ? 'streak-motivation--unlocked' : ''}`}>
+            {msg.emoji} {msg.text}
+          </p>
+
+          {/* Unlocked reward teaser */}
+          {displayUnlocked && (
+            <button className="streak-reward-teaser" onClick={handleClaimClick}>
+              🎁 Tap to claim your reward!
+            </button>
+          )}
+        </div>
+
+        {/* ── Test Panel (development only) ── */}
+        <div className="streak-test-panel">
+          <button
+            className="streak-test-toggle"
+            onClick={() => setShowTestPanel(p => !p)}
+            title="Toggle test controls — for development only"
           >
-            {i < filledDots ? '🔥' : '○'}
-          </span>
-        ))}
+            🧪 {showTestPanel ? 'Hide' : 'Test'}
+          </button>
+
+          {showTestPanel && (
+            <div className="streak-test-controls">
+              <span className="streak-test-label">Simulate streak day:</span>
+              <div className="streak-test-btns">
+                {[0, 1, 2, 3, 4, 5, 6, 7].map(n => (
+                  <button
+                    key={n}
+                    className={`streak-test-btn ${testStreak === n ? 'streak-test-btn--active' : ''}`}
+                    onClick={() => handleTestStreak(n)}
+                    title={n === 7 ? 'Triggers celebration popup' : `Show ${n}-day streak`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              {testStreak !== null && (
+                <button className="streak-test-reset" onClick={() => { setTestStreak(null); setShowCelebration(false); }}>
+                  ↩ Back to real data
+                </button>
+              )}
+              {testStreak !== null && (
+                <span className="streak-test-notice">⚠️ Test mode — real streak unchanged</span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
-      <p className="streak-minor-msg">
-        {rewardsUnlocked
-          ? `7-day streak unlocked!` 
-          : `${currentStreak} day${currentStreak !== 1 ? 's' : ''} streak`}
-      </p>
-    </div>
+    </>
   );
 }
 
@@ -99,7 +318,6 @@ function TaskModal({ mode, task, onClose, onSave }) {
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
 
-  // Close on Escape key
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handler);
@@ -123,30 +341,16 @@ function TaskModal({ mode, task, onClose, onSave }) {
           <h3>{mode === 'add' ? 'Add New Task' : 'Edit Task'}</h3>
           <button className="modal-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
-
         <form onSubmit={handleSubmit}>
           <div className="modal-field">
             <label htmlFor="task-title">Task Title <span className="required">*</span></label>
-            <input
-              id="task-title"
-              type="text"
-              placeholder="What do you want to accomplish?"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              autoFocus
-            />
+            <input id="task-title" type="text" placeholder="What do you want to accomplish?"
+              value={title} onChange={e => setTitle(e.target.value)} autoFocus />
           </div>
-
           <div className="modal-field">
             <label htmlFor="task-due">Due Date <span className="required">*</span></label>
-            <input
-              id="task-due"
-              type="date"
-              value={dueDate}
-              onChange={e => setDueDate(e.target.value)}
-            />
+            <input id="task-due" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
           </div>
-
           <div className="modal-field">
             <label htmlFor="task-priority">Priority</label>
             <select id="task-priority" value={priority} onChange={e => setPriority(e.target.value)}>
@@ -155,9 +359,7 @@ function TaskModal({ mode, task, onClose, onSave }) {
               <option value="Low">Low</option>
             </select>
           </div>
-
           {error && <div className="modal-error" role="alert">{error}</div>}
-
           <div className="modal-actions">
             <button type="button" className="btn-cancel" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn-save" disabled={loading}>
@@ -194,46 +396,25 @@ function TaskCard({ task, onToggle, onDelete, onEdit }) {
   };
 
   return (
-    <div
-      className={`task-card ${deleting ? 'task-card--deleting' : ''}`}
-      onClick={() => onEdit(task)}
-      title="Click to edit"
-    >
-      {/* Checkbox */}
+    <div className={`task-card ${deleting ? 'task-card--deleting' : ''}`}
+      onClick={() => onEdit(task)} title="Click to edit">
       <button
         className={`task-check ${toggling ? 'task-check--loading' : ''} ${task.status === 'completed' ? 'task-check--done' : ''}`}
-        onClick={handleToggle}
-        disabled={toggling}
+        onClick={handleToggle} disabled={toggling}
         aria-label={task.status === 'completed' ? 'Mark as pending' : 'Mark as complete'}
       >
         {task.status === 'completed' && '✓'}
       </button>
-
-      {/* Text */}
       <div className="task-body">
         <span className="task-title">{task.title}</span>
-        {task.due_date && (
-          <span className="task-due">📅 {formatDueDate(task.due_date)}</span>
-        )}
+        {task.due_date && <span className="task-due">📅 {formatDueDate(task.due_date)}</span>}
       </div>
-
-      {/* Priority badge */}
       {task.priority && (
-        <span
-          className="task-priority"
-          style={{ background: ps.bg, color: ps.color }}
-        >
+        <span className="task-priority" style={{ background: ps.bg, color: ps.color }}>
           {task.priority}
         </span>
       )}
-
-      {/* Delete */}
-      <button
-        className="task-delete"
-        onClick={handleDelete}
-        disabled={deleting}
-        aria-label="Delete task"
-      >
+      <button className="task-delete" onClick={handleDelete} disabled={deleting} aria-label="Delete task">
         {deleting ? '…' : '✕'}
       </button>
     </div>
@@ -242,11 +423,10 @@ function TaskCard({ task, onToggle, onDelete, onEdit }) {
 
 // ─── Column ───────────────────────────────────────────────────────────────────
 
-function TaskColumn({ title, emoji, tasks, onToggle, onDelete, onEdit }) {
+function TaskColumn({ title, tasks, onToggle, onDelete, onEdit }) {
   return (
     <div className="task-column">
       <div className="column-header">
-        <span>{emoji}</span>
         <h3 className="column-title">{title}</h3>
         {tasks.length > 0 && <span className="column-count">{tasks.length}</span>}
       </div>
@@ -254,13 +434,8 @@ function TaskColumn({ title, emoji, tasks, onToggle, onDelete, onEdit }) {
         {tasks.length === 0
           ? <p className="column-empty">No tasks yet</p>
           : tasks.map(t => (
-              <TaskCard
-                key={t.id}
-                task={t}
-                onToggle={onToggle}
-                onDelete={onDelete}
-                onEdit={onEdit}
-              />
+              <TaskCard key={t.id} task={t}
+                onToggle={onToggle} onDelete={onDelete} onEdit={onEdit} />
             ))
         }
       </div>
@@ -273,12 +448,9 @@ function TaskColumn({ title, emoji, tasks, onToggle, onDelete, onEdit }) {
 function CompletedSection({ tasks, onToggle, onDelete }) {
   return (
     <div className="completed-section">
-      <h2 className="completed-title">Completed Tasks </h2>
-
+      <h2 className="completed-title">Completed Tasks</h2>
       {tasks.length === 0 ? (
-        <p className="completed-empty">
-          You have 0 recently completed tasks. Complete a task to see it here!
-        </p>
+        <p className="completed-empty">No recently completed tasks. Complete a task to see it here!</p>
       ) : (
         <>
           <p className="completed-subtitle">
@@ -289,35 +461,19 @@ function CompletedSection({ tasks, onToggle, onDelete }) {
               const ps = priorityStyle(task.priority);
               return (
                 <div key={task.id} className="completed-card">
-                  <button
-                    className="task-check task-check--done"
-                    onClick={() => onToggle(task.id)}
-                    aria-label="Mark as pending"
-                  >✓</button>
-
+                  <button className="task-check task-check--done"
+                    onClick={() => onToggle(task.id)} aria-label="Mark as pending">✓</button>
                   <div className="task-body">
                     <span className="task-title task-title--done">{task.title}</span>
-                    <span className="task-due completed-at">
-                      ✅ Completed {formatCompletedAt(task.completed_at)}
-                    </span>
-                    {task.due_date && (
-                      <span className="task-due">
-                        due {formatDueDate(task.due_date)}
-                      </span>
-                    )}
+                    <span className="task-due completed-at">✅ Completed {formatCompletedAt(task.completed_at)}</span>
+                    {task.due_date && <span className="task-due">due {formatDueDate(task.due_date)}</span>}
                   </div>
-
                   {task.priority && (
                     <span className="task-priority" style={{ background: ps.bg, color: ps.color }}>
                       {task.priority}
                     </span>
                   )}
-
-                  <button
-                    className="task-delete"
-                    onClick={() => onDelete(task.id)}
-                    aria-label="Delete task"
-                  >✕</button>
+                  <button className="task-delete" onClick={() => onDelete(task.id)} aria-label="Delete task">✕</button>
                 </div>
               );
             })}
@@ -330,13 +486,12 @@ function CompletedSection({ tasks, onToggle, onDelete }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-function ToDo({ onTaskChange, lastUpdated }) {
-  const [tasks, setTasks]       = useState({ today: [], thisWeek: [], upcoming: [], completed: [] });
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState('');
-  const [modal, setModal]       = useState(null); // null | { mode: 'add' } | { mode: 'edit', task }
+function ToDo({ onTaskChange, lastUpdated, onClaimReward }) {
+  const [tasks, setTasks]     = useState({ today: [], thisWeek: [], upcoming: [], completed: [] });
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState('');
+  const [modal, setModal]     = useState(null);
 
-  // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchTasks = useCallback(async () => {
     try {
       const res = await fetch(API_URL, { credentials: 'include' });
@@ -351,77 +506,54 @@ function ToDo({ onTaskChange, lastUpdated }) {
 
   useEffect(() => { fetchTasks(); }, [fetchTasks, lastUpdated]);
 
-  // ── Create ────────────────────────────────────────────────────────────────
   const handleAdd = async ({ title, due_date, priority }) => {
     try {
       const res = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ title, due_date, priority }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', body: JSON.stringify({ title, due_date, priority }),
       });
       if (!res.ok) throw new Error();
       setModal(null);
       await fetchTasks();
       if (onTaskChange) onTaskChange();
-    } catch {
-      setError('Could not create task.');
-    }
+    } catch { setError('Could not create task.'); }
   };
 
-  // ── Edit ──────────────────────────────────────────────────────────────────
   const handleEdit = async ({ title, due_date, priority }) => {
     try {
       const res = await fetch(`${API_URL}/${modal.task.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ title, due_date, priority }),
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', body: JSON.stringify({ title, due_date, priority }),
       });
       if (!res.ok) throw new Error();
       setModal(null);
       await fetchTasks();
       if (onTaskChange) onTaskChange();
-    } catch {
-      setError('Could not update task.');
-    }
+    } catch { setError('Could not update task.'); }
   };
 
-  // ── Toggle ────────────────────────────────────────────────────────────────
   const handleToggle = async (id) => {
     try {
-      const res = await fetch(`${API_URL}/${id}/toggle`, {
-        method: 'PATCH',
-        credentials: 'include',
-      });
+      const res = await fetch(`${API_URL}/${id}/toggle`, { method: 'PATCH', credentials: 'include' });
       if (!res.ok) throw new Error();
       await fetchTasks();
       if (onTaskChange) onTaskChange();
-    } catch {
-      setError('Could not update task.');
-    }
+    } catch { setError('Could not update task.'); }
   };
 
-  // ── Delete ────────────────────────────────────────────────────────────────
   const handleDelete = async (id) => {
     try {
-      const res = await fetch(`${API_URL}/${id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
+      const res = await fetch(`${API_URL}/${id}`, { method: 'DELETE', credentials: 'include' });
       if (!res.ok) throw new Error();
       await fetchTasks();
       if (onTaskChange) onTaskChange();
-    } catch {
-      setError('Could not delete task.');
-    }
+    } catch { setError('Could not delete task.'); }
   };
 
   const today = new Date();
   const dateLabel = today.toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
   });
-
   const activeCount = tasks.today.length + tasks.thisWeek.length + tasks.upcoming.length;
 
   if (loading) {
@@ -435,20 +567,18 @@ function ToDo({ onTaskChange, lastUpdated }) {
 
   return (
     <div className="todo">
-      {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="todo-header">
         <div>
           <h1 className="todo-title">To-Do List</h1>
           <p className="todo-date">{dateLabel} 🌸</p>
         </div>
         {activeCount > 0 && (
-          <span className="todo-summary">
-            {activeCount} task{activeCount !== 1 ? 's' : ''} remaining
-          </span>
+          <span className="todo-summary">{activeCount} task{activeCount !== 1 ? 's' : ''} remaining</span>
         )}
       </div>
 
-      <StreakWidget lastUpdated={lastUpdated} />
+      {/* Streak widget — centered, compact */}
+      <StreakWidget lastUpdated={lastUpdated} onClaimReward={onClaimReward} />
 
       {error && (
         <div className="todo-error" role="alert">
@@ -457,42 +587,19 @@ function ToDo({ onTaskChange, lastUpdated }) {
         </div>
       )}
 
-      {/* ── Three columns ──────────────────────────────────────────────── */}
       <div className="todo-columns">
-        <TaskColumn title="Today"
-          tasks={tasks.today}
-          onToggle={handleToggle} onDelete={handleDelete}
-          onEdit={(task) => setModal({ mode: 'edit', task })}
-        />
-        <TaskColumn title="This Week"
-          tasks={tasks.thisWeek}
-          onToggle={handleToggle} onDelete={handleDelete}
-          onEdit={(task) => setModal({ mode: 'edit', task })}
-        />
-        <TaskColumn title="Upcoming"
-          tasks={tasks.upcoming}
-          onToggle={handleToggle} onDelete={handleDelete}
-          onEdit={(task) => setModal({ mode: 'edit', task })}
-        />
+        <TaskColumn title="Today"     tasks={tasks.today}    onToggle={handleToggle} onDelete={handleDelete} onEdit={t => setModal({ mode: 'edit', task: t })} />
+        <TaskColumn title="This Week" tasks={tasks.thisWeek} onToggle={handleToggle} onDelete={handleDelete} onEdit={t => setModal({ mode: 'edit', task: t })} />
+        <TaskColumn title="Upcoming"  tasks={tasks.upcoming} onToggle={handleToggle} onDelete={handleDelete} onEdit={t => setModal({ mode: 'edit', task: t })} />
       </div>
 
-      {/* ── Completed ──────────────────────────────────────────────────── */}
-      <CompletedSection
-        tasks={tasks.completed}
-        onToggle={handleToggle}
-        onDelete={handleDelete}
-      />
+      <CompletedSection tasks={tasks.completed} onToggle={handleToggle} onDelete={handleDelete} />
 
-      {/* ── FAB ────────────────────────────────────────────────────────── */}
-      <button className="fab" onClick={() => setModal({ mode: 'add' })} aria-label="Add new task">
-        +
-      </button>
+      <button className="fab" onClick={() => setModal({ mode: 'add' })} aria-label="Add new task">+</button>
 
-      {/* ── Modal ──────────────────────────────────────────────────────── */}
       {modal && (
         <TaskModal
-          mode={modal.mode}
-          task={modal.task || null}
+          mode={modal.mode} task={modal.task || null}
           onClose={() => setModal(null)}
           onSave={modal.mode === 'add' ? handleAdd : handleEdit}
         />
