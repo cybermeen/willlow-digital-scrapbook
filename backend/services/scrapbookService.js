@@ -38,7 +38,6 @@ exports.getOrCreateLog = async (req, res) => {
 
     const log = result.rows[0];
 
-    // Fetch all content in parallel — now includes videos and audio
     const [photos, videos, audio, notes, answers, stickers] = await Promise.all([
       db.query('SELECT * FROM log_photos  WHERE log_id = $1 ORDER BY z_index', [log.id]),
       db.query('SELECT * FROM log_videos  WHERE log_id = $1 ORDER BY z_index', [log.id]),
@@ -344,7 +343,6 @@ exports.getDailyPrompt = async (req, res) => {
     const result = await db.query(query, params);
     if (result.rows.length === 0) return res.status(404).json({ error: 'No prompts found' });
     
-    // Pick a prompt based on day of year to ensure same prompt all day
     const now = new Date();
     const startOfYear = new Date(now.getFullYear(), 0, 0);
     const diff = now - startOfYear;
@@ -367,7 +365,9 @@ exports.savePromptAnswer = async (req, res) => {
     if (!isOwner) return res.status(403).json({ error: 'Access denied' });
     if (!answer_text?.trim()) return res.status(400).json({ error: 'Answer text is required' });
     const result = await db.query(
-      `INSERT INTO prompt_answers (log_id, prompt_id, answer_text, pos_x, pos_y, width, height, z_index) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      // FIX: include width, height (added via migration) in INSERT
+      `INSERT INTO prompt_answers (log_id, prompt_id, answer_text, pos_x, pos_y, width, height, z_index)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [logId, prompt_id, answer_text.trim(), pos_x||0, pos_y||0, width||260, height||120, z_index||0]
     );
     res.status(201).json(result.rows[0]);
@@ -380,8 +380,7 @@ exports.savePromptAnswer = async (req, res) => {
 exports.updatePromptAnswer = async (req, res) => {
   try {
     const { answerId } = req.params;
-    // 1. We added prompt_id to the destructured body here:
-    const { prompt_id, answer_text, pos_x, pos_y, width, height, z_index } = req.body;
+    const { prompt_id, answer_text, pos_x, pos_y, width, height, z_index, rotation } = req.body;
     
     const ownership = await db.query(`SELECT log_id FROM prompt_answers WHERE id = $1`, [answerId]);
     if (!ownership.rows.length) return res.status(404).json({ error: 'Not found' });
@@ -389,11 +388,19 @@ exports.updatePromptAnswer = async (req, res) => {
     const isOwner = await verifyLogOwnership(ownership.rows[0].log_id, req.user.id);
     if (!isOwner) return res.status(403).json({ error: 'Access denied' });
     
+    // FIX: include width, height, rotation (all added via migration)
     const result = await db.query(
-      // 2. We added prompt_id=COALESCE($7,prompt_id) to the SQL query, and shifted id to $8
-      `UPDATE prompt_answers SET answer_text=COALESCE($1,answer_text), pos_x=COALESCE($2,pos_x), pos_y=COALESCE($3,pos_y), width=COALESCE($4,width), height=COALESCE($5,height), z_index=COALESCE($6,z_index), prompt_id=COALESCE($7,prompt_id) WHERE id=$8 RETURNING *`,
-      // 3. We added prompt_id to the array of variables passed to SQL
-      [answer_text, pos_x, pos_y, width, height, z_index, prompt_id, answerId]
+      `UPDATE prompt_answers
+       SET answer_text=COALESCE($1,answer_text),
+           pos_x=COALESCE($2,pos_x),
+           pos_y=COALESCE($3,pos_y),
+           width=COALESCE($4,width),
+           height=COALESCE($5,height),
+           z_index=COALESCE($6,z_index),
+           prompt_id=COALESCE($7,prompt_id),
+           rotation=COALESCE($8,rotation)
+       WHERE id=$9 RETURNING *`,
+      [answer_text, pos_x, pos_y, width, height, z_index, prompt_id, rotation, answerId]
     );
     
     res.json(result.rows[0]);
@@ -472,6 +479,9 @@ exports.deleteSticker = async (req, res) => {
 };
 
 // ── Layout ─────────────────────────────────────────────────────────────────
+// FIX: saveLayout now persists norm_x/norm_y/norm_w/norm_h (normalised coords)
+// and rotation for all item types, including prompt_answers (which previously
+// had no width/height/rotation columns — added via migration_layout_columns.sql).
 
 exports.saveLayout = async (req, res) => {
   const client = await db.pool.connect();
@@ -483,63 +493,99 @@ exports.saveLayout = async (req, res) => {
     if (!isOwner) return res.status(403).json({ error: 'Access denied' });
 
     await client.query('BEGIN');
-    
+
+    // ── Photos ── (norm_* columns added by migration)
     if (photos) {
       for (const p of photos) {
         await client.query(
-          `UPDATE log_photos SET pos_x=$1,pos_y=$2,width=$3,height=$4,rotation=$5,z_index=$6 WHERE id=$7 AND log_id=$8`,
-          [p.pos_x,p.pos_y,p.width,p.height,p.rotation,p.z_index,p.id,logId]
+          `UPDATE log_photos
+           SET pos_x=$1, pos_y=$2, width=$3, height=$4, rotation=$5, z_index=$6,
+               norm_x=$7, norm_y=$8, norm_w=$9, norm_h=$10
+           WHERE id=$11 AND log_id=$12`,
+          [p.pos_x, p.pos_y, p.width, p.height, p.rotation ?? 0, p.z_index ?? 0,
+           p.norm_x ?? null, p.norm_y ?? null, p.norm_w ?? null, p.norm_h ?? null,
+           p.id, logId]
         );
       }
     }
+
+    // ── Videos ── (pos_x/y/width/height/rotation/z_index/norm_* added by migration)
     if (videos) {
       for (const v of videos) {
         await client.query(
-          `UPDATE log_videos SET pos_x=$1,pos_y=$2,width=$3,height=$4,rotation=$5,z_index=$6 WHERE id=$7 AND log_id=$8`,
-          [v.pos_x,v.pos_y,v.width,v.height,v.rotation,v.z_index,v.id,logId]
+          `UPDATE log_videos
+           SET pos_x=$1, pos_y=$2, width=$3, height=$4, rotation=$5, z_index=$6,
+               norm_x=$7, norm_y=$8, norm_w=$9, norm_h=$10
+           WHERE id=$11 AND log_id=$12`,
+          [v.pos_x, v.pos_y, v.width, v.height, v.rotation ?? 0, v.z_index ?? 0,
+           v.norm_x ?? null, v.norm_y ?? null, v.norm_w ?? null, v.norm_h ?? null,
+           v.id, logId]
         );
       }
     }
+
+    // ── Audio ── (pos_x/y/width/height/rotation/z_index/norm_* added by migration)
     if (audios) {
       for (const a of audios) {
         await client.query(
-          `UPDATE log_audio SET pos_x=$1,pos_y=$2,width=$3,height=$4,rotation=$5,z_index=$6 WHERE id=$7 AND log_id=$8`,
-          [a.pos_x,a.pos_y,a.width,a.height,a.rotation,a.z_index,a.id,logId]
+          `UPDATE log_audio
+           SET pos_x=$1, pos_y=$2, width=$3, height=$4, rotation=$5, z_index=$6,
+               norm_x=$7, norm_y=$8, norm_w=$9, norm_h=$10
+           WHERE id=$11 AND log_id=$12`,
+          [a.pos_x, a.pos_y, a.width, a.height, a.rotation ?? 0, a.z_index ?? 0,
+           a.norm_x ?? null, a.norm_y ?? null, a.norm_w ?? null, a.norm_h ?? null,
+           a.id, logId]
         );
       }
     }
+
+    // ── Notes ── (height/norm_* added by migration)
     if (notes) {
       for (const n of notes) {
         await client.query(
-          `UPDATE log_notes SET pos_x=$1,pos_y=$2,width=$3,rotation=$4,z_index=$5 WHERE id=$6 AND log_id=$7`,
-          [n.pos_x,n.pos_y,n.width,n.rotation,n.z_index,n.id,logId]
+          `UPDATE log_notes
+           SET pos_x=$1, pos_y=$2, width=$3, height=$4, rotation=$5, z_index=$6,
+               norm_x=$7, norm_y=$8, norm_w=$9, norm_h=$10
+           WHERE id=$11 AND log_id=$12`,
+          [n.pos_x, n.pos_y, n.width, n.height ?? 80, n.rotation ?? 0, n.z_index ?? 0,
+           n.norm_x ?? null, n.norm_y ?? null, n.norm_w ?? null, n.norm_h ?? null,
+           n.id, logId]
         );
       }
     }
-    // Update Prompt Answer Positions and size
+
+    // ── Answers ── FIX: now saves width, height, rotation, norm_* (all added by migration)
     if (answers) {
       for (const a of answers) {
         await client.query(
-          `UPDATE prompt_answers SET pos_x=COALESCE($1,pos_x), pos_y=COALESCE($2,pos_y), width=COALESCE($3,width), height=COALESCE($4,height), z_index=COALESCE($5,z_index) WHERE id=$6 AND log_id=$7`,
-          [a.pos_x, a.pos_y, a.width, a.height, a.z_index, a.id, logId]
+          `UPDATE prompt_answers
+           SET pos_x=COALESCE($1,pos_x), pos_y=COALESCE($2,pos_y),
+               width=COALESCE($3,width), height=COALESCE($4,height),
+               z_index=COALESCE($5,z_index), rotation=COALESCE($6,rotation),
+               norm_x=$7, norm_y=$8, norm_w=$9, norm_h=$10
+           WHERE id=$11 AND log_id=$12`,
+          [a.pos_x, a.pos_y, a.width, a.height, a.z_index ?? 0, a.rotation ?? 0,
+           a.norm_x ?? null, a.norm_y ?? null, a.norm_w ?? null, a.norm_h ?? null,
+           a.id, logId]
         );
       }
     }
+
+    // ── Stickers ── (norm_* added by migration)
     if (stickers) {
       for (const s of stickers) {
-        await db.query(
-          `UPDATE log_stickers SET pos_x=COALESCE($1,pos_x), pos_y=COALESCE($2,pos_y), width=COALESCE($3,width), height=COALESCE($4,height), z_index=COALESCE($5,z_index) WHERE id=$6 AND log_id=$7`,
-          [s.pos_x, s.pos_y, s.width, s.height, s.z_index, s.id, logId]
-        );
-      }
-    }    if (stickers) {
-      for (const s of stickers) {
         await client.query(
-          `UPDATE log_stickers SET pos_x=$1,pos_y=$2,width=$3,height=$4,rotation=$5,z_index=$6 WHERE id=$7 AND log_id=$8`,
-          [s.pos_x,s.pos_y,s.width,s.height,s.rotation,s.z_index,s.id,logId]
+          `UPDATE log_stickers
+           SET pos_x=$1, pos_y=$2, width=$3, height=$4, rotation=$5, z_index=$6,
+               norm_x=$7, norm_y=$8, norm_w=$9, norm_h=$10
+           WHERE id=$11 AND log_id=$12`,
+          [s.pos_x, s.pos_y, s.width, s.height, s.rotation ?? 0, s.z_index ?? 0,
+           s.norm_x ?? null, s.norm_y ?? null, s.norm_w ?? null, s.norm_h ?? null,
+           s.id, logId]
         );
       }
     }
+
     await client.query(
       `UPDATE day_logs SET layout_style=COALESCE($1,layout_style), mood=COALESCE($2,mood), updated_at=NOW() WHERE id=$3`,
       [layout_style, mood, logId]

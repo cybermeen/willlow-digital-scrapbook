@@ -72,13 +72,9 @@ function formatFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// ── FIX 1: Canvas dimensions constant ─────────────────────────────────────
-// These are the reference dimensions of the DayLog canvas.
-// Used to normalise positions when saving so the Scrapbook can scale them.
 const CANVAS_REF_WIDTH  = 680;
 const CANVAS_REF_HEIGHT = 540;
 
-// ── Shared Rnd style ───────────────────────────────────────────────────────
 const RND_HANDLE_STYLES = {
   topLeft:     { width: 12, height: 12, left: -6,  top: -6,  background: '#fff', border: '2px solid #aad4e8', borderRadius: '50%', zIndex: 20 },
   topRight:    { width: 12, height: 12, right: -6, top: -6,  background: '#fff', border: '2px solid #aad4e8', borderRadius: '50%', zIndex: 20 },
@@ -93,9 +89,6 @@ function angleBetween(pivot, point) {
   return Math.atan2(point.y - pivot.y, point.x - pivot.x) * (180 / Math.PI);
 }
 
-// ── FIX 2: Helper to get actual canvas dimensions at runtime ───────────────
-// We read the real rendered canvas size so positions can be normalised
-// relative to CANVAS_REF_WIDTH / CANVAS_REF_HEIGHT before saving.
 function getCanvasScale(canvasEl) {
   if (!canvasEl) return { scaleX: 1, scaleY: 1 };
   const rect = canvasEl.getBoundingClientRect();
@@ -111,7 +104,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
   const date    = todayStr();
   const display = formatDisplayDate(date);
 
-  // FIX 3: Ref to the canvas DOM element so we can read its real dimensions on save
   const canvasRef = useRef(null);
 
   // Log & content state
@@ -125,7 +117,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState(null);
   const [rotations, setRotations] = useState({});
-  const rotatingRef = useRef(null);
 
   // Streak state
   const [streak, setStreak] = useState(null);
@@ -277,24 +268,35 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
 
   const openLibrary = () => { setShowLibrary(true); loadAssets(); };
 
-  // ── ROTATION FIX: rndWrapperRefs stores a ref to each Rnd's outer wrapper div
+  // ── ROTATION: rndWrapperRefs stores refs to each Rnd's outer wrapper div
   // so handleRotateStart can always get the true bounding box for center calculation.
-  // We use a plain object (not useState) to avoid re-renders on ref assignment.
   const rndWrapperRefs = useRef({});
-
-  // Helper used by each Rnd's inner div to register its wrapper element.
-  // Usage: <div ref={el => rndWrapperRefs.current['photo-123'] = el} ...>
   const setRndRef = (key, el) => { rndWrapperRefs.current[key] = el; };
 
-  // handleRotateStart: itemKey identifies which item, rndEl is the OUTER wrapper div
-  // (registered via setRndRef) — its bounding rect gives us the true visual center.
+  // FIX: handleRotateStart now only takes (e, itemKey, currentRotation).
+  // It finds the element center via rndWrapperRefs for all item types.
+  // For items that don't use rndWrapperRefs (answer-0), we walk up the DOM
+  // to find the react-draggable wrapper.
   const handleRotateStart = (e, itemKey, currentRotation) => {
     e.stopPropagation();
     if (e.preventDefault) e.preventDefault();
 
-    // Use the registered outer wrapper so getBoundingClientRect is always accurate,
-    // regardless of CSS transform applied to the inner .dl-rnd-item child.
-    const draggableEl = rndWrapperRefs.current[itemKey];
+    // Try registered wrapper ref first (photos, videos, audios, stickers, emoji notes)
+    let draggableEl = rndWrapperRefs.current[itemKey];
+
+    // Fallback: walk up DOM from the rotate handle to find .react-draggable wrapper
+    if (!draggableEl) {
+      const nativeEvent = e.nativeEvent || e;
+      let node = nativeEvent.target || nativeEvent.srcElement;
+      while (node && node !== document.body) {
+        if (node.classList && node.classList.contains('react-draggable')) {
+          draggableEl = node;
+          break;
+        }
+        node = node.parentElement;
+      }
+    }
+
     if (!draggableEl) return;
 
     const rect = draggableEl.getBoundingClientRect();
@@ -308,12 +310,9 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
 
     const startPos   = getPos(e.nativeEvent || e);
     const startAngle = angleBetween({ x: centerX, y: centerY }, startPos);
-
-    // Capture the rotation value at the moment drag begins so we can delta from it
     const baseRotation = currentRotation || 0;
 
     const onMove = (moveEvent) => {
-      // Prevent scroll on touch devices while rotating
       if (moveEvent.cancelable) moveEvent.preventDefault();
       const currentPos   = getPos(moveEvent);
       const currentAngle = angleBetween({ x: centerX, y: centerY }, currentPos);
@@ -591,10 +590,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
     }
   };
 
-  // ── FIX 5: Save — normalise all positions relative to CANVAS_REF dimensions
-  // so Scrapbook can scale them to fit its own page dimensions proportionally.
-  // We also store canvas_ref_width and canvas_ref_height in the payload so
-  // older entries saved without normalisation can be detected and handled gracefully.
   const handleSave = async () => {
     if (!log) return;
     setSaving(true);
@@ -608,12 +603,8 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
 
       await handleStickerUpdate();
 
-      // Read actual canvas size at save time for accurate normalisation
       const { scaleX, scaleY } = getCanvasScale(canvasRef.current);
 
-      // Helper: normalise a component's geometry relative to the reference canvas size.
-      // This stores both the raw pixel values AND the normalised [0..1] ratios so the
-      // Scrapbook renderer can place them correctly regardless of its own page size.
       const normalise = (item, typeKey, idField = 'id') => {
         const rot = rotations[`${typeKey}-${item[idField]}`] || 0;
         const nx  = ((item.pos_x  || 0) * scaleX) / CANVAS_REF_WIDTH;
@@ -623,7 +614,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
         return {
           ...item,
           rotation: rot,
-          // Normalised ratios (0-1 relative to reference canvas)
           norm_x: nx,
           norm_y: ny,
           norm_w: nw,
@@ -632,7 +622,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
       };
 
       const payload = {
-        // FIX: include reference dimensions so Scrapbook knows the coordinate space
         canvas_ref_width:  CANVAS_REF_WIDTH,
         canvas_ref_height: CANVAS_REF_HEIGHT,
         photos:   photos.map(p  => normalise(p,  'photo')),
@@ -879,21 +868,22 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
               {!assetsLoading && assets.length === 0 && (
                 <p className="dl-library-empty">No assets found</p>
               )}
-              {assets.map((asset) => (
-                <button
-                  key={asset.id}
-                  className="dl-asset-btn" // Removed conditional locked class
-                  onClick={() => handlePlaceSticker(asset)} // Removed !isLocked check
-                  title={asset.name} // Removed locked title
-                >
-                  <img
-                    src={`/${asset.file_path}`}
-                    alt={asset.name}
-                    onError={e => { e.target.style.display = 'none'; }}
-                  />
-                  {/* Removed the {isLocked && ...} lock icon span */}
-                </button>
-              ))}
+              {assets.map((asset, idx) => {
+                const NUM_LOCKED = 3;
+                const isLocked = idx >= assets.length - NUM_LOCKED && !rewardsUnlocked;
+                return (
+                  <button
+                    key={asset.id}
+                    className={`dl-asset-btn${isLocked ? ' dl-asset-btn--locked' : ''}`}
+                    onClick={() => { if (!isLocked) handlePlaceSticker(asset); }}
+                    title={isLocked ? '🔒 Complete a 7-day streak to unlock!' : asset.name}
+                    disabled={isLocked}
+                  >
+                    <img src={`/${asset.file_path}`} alt={asset.name} onError={e => { e.target.style.display = 'none'; }} />
+                    {isLocked && <span className="dl-asset-lock-icon">🔒</span>}
+                  </button>
+                );
+              })}
             </div>
             <button className="dl-library-back" onClick={() => setShowLibrary(false)}>◀</button>
           </div>
@@ -922,7 +912,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
       </div>
 
       {/* ── Right Panel: Canvas ── */}
-      {/* FIX 6: attach canvasRef so we can measure actual rendered size on save */}
       <div className="dl-canvas-wrap">
         <div className="dl-canvas" ref={canvasRef}>
           {/* Date stamp */}
@@ -978,7 +967,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 minHeight={100}
                 style={{ cursor: isSelected ? 'grab' : 'auto' }}
               >
-                {/* ROTATION FIX: ref on the outer wrapper gives us the true bounding rect */}
                 <div
                   ref={el => setRndRef(`video-${video.id}`, el)}
                   className="dl-rnd-item"
@@ -1203,7 +1191,9 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
               minHeight={60}
               style={{ cursor: selectedId === 'answer-0' ? 'grab' : 'pointer' }}
             >
+              {/* FIX: answer-rnd uses rndWrapperRefs too so rotation works consistently */}
               <div
+                ref={el => setRndRef('answer-0', el)}
                 className="dl-rnd-item dl-rnd-answer"
                 onMouseDown={() => setSelectedId('answer-0')}
                 onTouchStart={() => setSelectedId('answer-0')}
@@ -1220,13 +1210,12 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                     style={{ opacity: 1 }}
                     onMouseDown={e => {
                       e.stopPropagation();
-                      const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
-                      handleRotateStart(e, 'answer-0', rotations['answer-0'] || 0, el);
+                      // FIX: use the same handleRotateStart signature — no 4th arg
+                      handleRotateStart(e, 'answer-0', rotations['answer-0'] || 0);
                     }}
                     onTouchStart={e => {
                       e.stopPropagation();
-                      const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
-                      handleRotateStart(e, 'answer-0', rotations['answer-0'] || 0, el);
+                      handleRotateStart(e, 'answer-0', rotations['answer-0'] || 0);
                     }}
                     title="Rotate"
                   >↻</div>
@@ -1234,6 +1223,7 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 <div className="dl-canvas-answer-label" style={{ pointerEvents: 'none', flexShrink: 0 }}>
                   {dailyPrompt.prompt_text}
                 </div>
+                {/* FIX: blue washi background (matches DayLog canvas colour) */}
                 <div className="dl-canvas-washi" style={{ flex: 1, overflow: 'visible', pointerEvents: 'none' }}>
                   <span className="dl-canvas-answer-text">{answerText}</span>
                 </div>
@@ -1278,6 +1268,7 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 style={{ cursor: isSelected ? 'grab' : 'pointer' }}
               >
                 <div
+                  ref={el => setRndRef(`sticker-${sticker.id}`, el)}
                   className="dl-rnd-item"
                   onMouseDown={() => setSelectedId(`sticker-${sticker.id}`)}
                   onTouchStart={() => setSelectedId(`sticker-${sticker.id}`)}
@@ -1293,13 +1284,12 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                       style={{ opacity: 1 }}
                       onMouseDown={e => {
                         e.stopPropagation();
-                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
-                        handleRotateStart(e, `sticker-${sticker.id}`, rotations[`sticker-${sticker.id}`] || 0, el);
+                        // FIX: consistent 3-arg call
+                        handleRotateStart(e, `sticker-${sticker.id}`, rotations[`sticker-${sticker.id}`] || 0);
                       }}
                       onTouchStart={e => {
                         e.stopPropagation();
-                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
-                        handleRotateStart(e, `sticker-${sticker.id}`, rotations[`sticker-${sticker.id}`] || 0, el);
+                        handleRotateStart(e, `sticker-${sticker.id}`, rotations[`sticker-${sticker.id}`] || 0);
                       }}
                       title="Rotate"
                     >↻</div>
@@ -1354,6 +1344,7 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 style={{ cursor: isSelected ? 'grab' : 'pointer' }}
               >
                 <div
+                  ref={el => setRndRef(`note-${note.id}`, el)}
                   className={`dl-rnd-item dl-emoji-note${isNew ? ' dl-emoji-note--new' : ''}`}
                   onMouseDown={() => setSelectedId(`note-${note.id}`)}
                   onTouchStart={() => setSelectedId(`note-${note.id}`)}
@@ -1372,13 +1363,12 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                       style={{ opacity: 1 }}
                       onMouseDown={e => {
                         e.stopPropagation();
-                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
-                        handleRotateStart(e, `note-${note.id}`, rotations[`note-${note.id}`] || 0, el);
+                        // FIX: consistent 3-arg call
+                        handleRotateStart(e, `note-${note.id}`, rotations[`note-${note.id}`] || 0);
                       }}
                       onTouchStart={e => {
                         e.stopPropagation();
-                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
-                        handleRotateStart(e, `note-${note.id}`, rotations[`note-${note.id}`] || 0, el);
+                        handleRotateStart(e, `note-${note.id}`, rotations[`note-${note.id}`] || 0);
                       }}
                       title="Rotate"
                     >↻</div>

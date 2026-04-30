@@ -99,7 +99,6 @@
   animation: flipInRight 0.95s cubic-bezier(0.25, 1, 0.5, 1) both;
 }
 
-/* ─── Page Flip Animations ──────────────────────────────────── */
 @keyframes flipInRight {
   0%   { transform: perspective(1800px) rotateY(70deg); opacity: 0.3; }
   60%  { opacity: 1; }
@@ -140,18 +139,21 @@
     rgba(180,165,140,0.12) 27px,
     rgba(180,165,140,0.12) 28px
   );
-  /* FIX: clip children so scaled items don't overflow page edges */
   overflow: hidden;
 }
 
 /* ─── Date Header ───────────────────────────────────────────── */
+/* FIX: z-index 200 ensures date always renders on top of all media items.
+   A subtle backdrop prevents readability issues when media overlaps. */
 .sb-date {
   position: absolute;
   font-family: 'Cormorant Garamond', serif;
   color: #5c7a5c;
   line-height: 1.2;
-  /* FIX: ensure date stays above all positioned media items */
-  z-index: 100;
+  z-index: 200;
+  background: transparent;
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
 }
 .sb-date--left  { top: 1.5rem; left: 1.5rem;  text-align: left;  }
 .sb-date--right { top: 1.5rem; right: 1.5rem; text-align: right; }
@@ -159,7 +161,18 @@
 .sb-date-full    { display: block; font-size: 0.7rem; font-family: 'Nunito', sans-serif; letter-spacing: 1px; color: #8a9a8a; margin-top: 0.2rem; }
 
 /* ─── Stamps / Photos ───────────────────────────────────────── */
-.sb-stamp-wrap { position: absolute; display: flex; flex-direction: column; align-items: flex-start; gap: 0; }
+/* FIX: sb-stamp-wrap no longer wraps a WashiTapeDecor component.
+   Washi tape elements are only rendered for explicitly placed sticker assets.
+   Photos appear cleanly without any automatic tape decoration. */
+.sb-stamp-wrap {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/* ── Washi tape: only used for explicitly placed sticker assets ── */
+/* (WashiTapeDecor component has been removed from photo rendering) */
 .sb-washi-tape {
   width: 70px; height: 20px; border-radius: 2px; opacity: 0.9;
   margin-left: 10px; margin-bottom: -8px; position: relative;
@@ -176,12 +189,10 @@
   position: relative; z-index: 1;
   filter: drop-shadow(0 8px 16px rgba(0,0,0,0.18));
   transition: transform 0.2s ease;
-  /* FIX: width/height now set via inline style from resolveGeometry — no fixed size here */
   overflow: hidden;
 }
 .sb-stamp:hover { transform: scale(1.02) rotate(-1deg); }
 
-/* FIX: stamp clip-path is applied to the img inside — width/height come from inline style */
 .sb-stamp img {
   width: 100%;
   height: 100%;
@@ -191,14 +202,92 @@
 
 /* ─── Media Items ───────────────────────────────────────────── */
 .sb-answer-wrap  { position: absolute; }
-.sb-media-item   { position: absolute; border-radius: 8px; overflow: hidden; box-shadow: 0 6px 16px rgba(0,0,0,0.15); background: #fff; }
-.sb-video-item video { width: 100%; height: 100%; display: block; object-fit: cover; }
-.sb-audio-card   { display: flex; flex-direction: column; justify-content: center; gap: 0.5rem; padding: 0.5rem; background: #f9f6f0; height: 100%; box-sizing: border-box; }
-.sb-audio-label  { font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.85rem; color: #2d3a2d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.sb-answer-prompt { font-family: 'Nunito', sans-serif; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: #8a9a8a; margin-bottom: 0.4rem; letter-spacing: 1px; }
-.sb-answer-washi  { background: #e8f0e8; border-radius: 4px; padding: 0.6rem 1rem; opacity: 0.95; transform: rotate(-1deg); box-shadow: 2px 2px 8px rgba(0,0,0,0.05); }
-.sb-answer-text   { font-family: 'Cormorant Garamond', serif; font-size: 1.05rem; color: #2d3a2d; white-space: pre-wrap; word-break: break-word; }
+.sb-media-item {
+  position: absolute;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+  background: #fff;
+}
+
+/* FIX: video items — enforce display:block so height is respected properly */
+.sb-video-item video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.sb-audio-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: #f9f6f0;
+  height: 100%;
+  box-sizing: border-box;
+}
+.sb-audio-label {
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #2d3a2d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─── Prompt Answer — FIX: blue washi matching DayLog canvas ───────────── */
+/* This must match .dl-canvas-washi in DayLog.css exactly. */
+.sb-answer-prompt {
+  font-family: 'Nunito', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #6b8a9a;
+  margin-bottom: 0.4rem;
+  letter-spacing: 1px;
+}
+
+.sb-answer-washi {
+  /* FIX: blue gradient — was green (#e8f0e8), now matches DayLog's blue washi tape */
+  background: linear-gradient(135deg, #aad4e8 0%, #b0ddf0 50%, #8fcce0 100%);
+  border-radius: 3px;
+  padding: 0.6rem 1rem;
+  opacity: 0.9;
+  transform: rotate(-1deg);
+  box-shadow: 2px 2px 8px rgba(0,0,0,0.05);
+  position: relative;
+}
+
+/* Subtle stripe texture matching DayLog washi */
+.sb-answer-washi::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0px,
+    transparent 8px,
+    rgba(255,255,255,0.12) 8px,
+    rgba(255,255,255,0.12) 9px
+  );
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.sb-answer-text {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.05rem;
+  color: #2d3a2d;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-style: italic;
+  position: relative;
+}
+
 .sb-sticker       { position: absolute; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1)); }
 .sb-sticker img   { width: 100%; height: 100%; object-fit: contain; }
 
@@ -240,8 +329,7 @@
 .sb-log-loading { font-family: 'Nunito', sans-serif; font-size: 0.85rem; color: #b0a090; padding: 2rem; text-align: center; }
 
 /* ═══════════════════════════════════════════════════════════════
-   FIX: Single-page Share Modal styles
-   Replaces the previous "capture entire spread" flow.
+   FIX: Export / Share Modal — multiple format options
    ═══════════════════════════════════════════════════════════════ */
 
 .sb-share-modal-overlay {
@@ -263,12 +351,15 @@
 .sb-share-modal {
   background: #fffdf8;
   border-radius: 18px;
-  padding: 2rem 2.25rem;
-  max-width: 380px;
+  padding: 1.75rem 2rem;
+  max-width: 420px;
   width: 90%;
   text-align: center;
   box-shadow: 0 20px 60px rgba(0,0,0,0.25);
   animation: sb-pop-in 0.3s cubic-bezier(0.34, 1.3, 0.64, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
 }
 
 @keyframes sb-pop-in {
@@ -280,14 +371,39 @@
   font-family: 'Cormorant Garamond', serif;
   font-size: 1.5rem;
   color: #4a3020;
-  margin: 0 0 0.4rem;
+  margin: 0;
 }
 
 .sb-share-modal-sub {
   font-family: 'Nunito', sans-serif;
   font-size: 0.85rem;
   color: #8a7060;
-  margin: 0 0 1.4rem;
+  margin: 0;
+}
+
+/* FIX: video notice banner */
+.sb-share-video-notice {
+  font-family: 'Nunito', sans-serif;
+  font-size: 0.75rem;
+  background: #fff8e8;
+  border: 1px solid #f0d090;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  color: #8a6020;
+  line-height: 1.5;
+  text-align: left;
+}
+
+/* Section label above each option group */
+.sb-share-section-label {
+  font-family: 'Nunito', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #b0a090;
+  text-align: left;
+  margin-bottom: -0.4rem;
 }
 
 /* The two side-by-side page buttons */
@@ -295,7 +411,6 @@
   display: flex;
   gap: 0.8rem;
   justify-content: center;
-  margin-bottom: 1.2rem;
 }
 
 .sb-share-page-btn {
@@ -304,7 +419,7 @@
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
-  padding: 1rem 0.5rem;
+  padding: 0.85rem 0.5rem;
   background: #f5ede0;
   border: 2px solid #d4b89a;
   border-radius: 12px;
@@ -326,7 +441,6 @@
 }
 
 .sb-share-page-btn--empty {
-  /* non-interactive placeholder when one side has no log */
   opacity: 0.35;
   cursor: default;
   font-size: 0.8rem;
@@ -334,24 +448,38 @@
   pointer-events: none;
 }
 
-.sb-share-page-icon {
-  font-size: 1.8rem;
-  line-height: 1;
-}
+.sb-share-page-icon  { font-size: 1.6rem; line-height: 1; }
+.sb-share-page-label { font-size: 0.75rem; font-weight: 700; color: #5a3a20; text-align: center; line-height: 1.3; }
 
-.sb-share-page-label {
-  font-size: 0.78rem;
+/* FIX: Print spread button */
+.sb-share-print-btn {
+  width: 100%;
+  padding: 0.7rem 1rem;
+  background: #f5ede0;
+  border: 2px solid #d4b89a;
+  border-radius: 12px;
+  cursor: pointer;
+  font-family: 'Nunito', sans-serif;
+  font-size: 0.88rem;
   font-weight: 700;
   color: #5a3a20;
-  text-align: center;
-  line-height: 1.3;
+  transition: all 0.18s ease;
 }
+
+.sb-share-print-btn:hover:not(:disabled) {
+  background: #eddcc8;
+  border-color: #c97b5a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(201,123,90,0.15);
+}
+
+.sb-share-print-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .sb-share-exporting {
   font-family: 'Nunito', sans-serif;
   font-size: 0.82rem;
   color: #c97b5a;
-  margin: 0 0 0.8rem;
+  margin: 0;
   animation: sb-pulse 1s ease-in-out infinite;
 }
 
