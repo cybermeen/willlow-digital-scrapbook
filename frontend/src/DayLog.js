@@ -72,8 +72,13 @@ function formatFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// ── FIX 1: Canvas dimensions constant ─────────────────────────────────────
+// These are the reference dimensions of the DayLog canvas.
+// Used to normalise positions when saving so the Scrapbook can scale them.
+const CANVAS_REF_WIDTH  = 680;
+const CANVAS_REF_HEIGHT = 540;
+
 // ── Shared Rnd style ───────────────────────────────────────────────────────
-// No position:absolute on the inner child — Rnd handles all positioning.
 const RND_HANDLE_STYLES = {
   topLeft:     { width: 12, height: 12, left: -6,  top: -6,  background: '#fff', border: '2px solid #aad4e8', borderRadius: '50%', zIndex: 20 },
   topRight:    { width: 12, height: 12, right: -6, top: -6,  background: '#fff', border: '2px solid #aad4e8', borderRadius: '50%', zIndex: 20 },
@@ -88,10 +93,26 @@ function angleBetween(pivot, point) {
   return Math.atan2(point.y - pivot.y, point.x - pivot.x) * (180 / Math.PI);
 }
 
+// ── FIX 2: Helper to get actual canvas dimensions at runtime ───────────────
+// We read the real rendered canvas size so positions can be normalised
+// relative to CANVAS_REF_WIDTH / CANVAS_REF_HEIGHT before saving.
+function getCanvasScale(canvasEl) {
+  if (!canvasEl) return { scaleX: 1, scaleY: 1 };
+  const rect = canvasEl.getBoundingClientRect();
+  return {
+    scaleX: CANVAS_REF_WIDTH  / (rect.width  || CANVAS_REF_WIDTH),
+    scaleY: CANVAS_REF_HEIGHT / (rect.height || CANVAS_REF_HEIGHT),
+  };
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────
 
-export default function DayLog({ user, streak: streakProp, claimingReward, onRewardClaimed, goToTab, forceRewardsUnlocked }) {  const date    = todayStr();
+export default function DayLog({ user, streak: streakProp, claimingReward, onRewardClaimed, goToTab, forceRewardsUnlocked }) {
+  const date    = todayStr();
   const display = formatDisplayDate(date);
+
+  // FIX 3: Ref to the canvas DOM element so we can read its real dimensions on save
+  const canvasRef = useRef(null);
 
   // Log & content state
   const [log,      setLog]      = useState(null);
@@ -100,11 +121,11 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
   const [audios,    setAudios]    = useState([]);
   const [answers,  setAnswers]  = useState([]);
   const [stickers, setStickers] = useState([]);
-  const [notes,    setNotes]    = useState([]); // emoji stickers stored as notes
+  const [notes,    setNotes]    = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState(null);
-  const [rotations, setRotations] = useState({}); // keyed by "type-id"
-  const rotatingRef = useRef(null); // { itemKey, startAngle, startRotation, centerX, centerY }
+  const [rotations, setRotations] = useState({});
+  const rotatingRef = useRef(null);
 
   // Streak state
   const [streak, setStreak] = useState(null);
@@ -131,14 +152,11 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
   const [assetsLoading, setAssetsLoading] = useState(false);
 
   useEffect(() => {
-  const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get('highlight') === 'new-sticker') {
-    // 1. Find the new sticker element
-    // 2. Add a CSS class called .sticker-highlight
-    // 3. Scroll to it
-    const el = document.getElementById('new-unicorn-sticker');
-    if (el) el.classList.add('streak-dot--latest'); // Reuse your bounce animation!
-  }
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('highlight') === 'new-sticker') {
+      const el = document.getElementById('new-unicorn-sticker');
+      if (el) el.classList.add('streak-dot--latest');
+    }
   }, []);
 
   useEffect(() => {
@@ -150,14 +168,11 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
     }
   }, [claimingReward]);
 
-  /* Streak Rewards panel*/
   const [showStreakRewards,    setShowStreakRewards]    = useState(false);
-  const [streakRewardTab,      setStreakRewardTab]      = useState('stickers'); // 'stickers' | 'prompts'
+  const [streakRewardTab,      setStreakRewardTab]      = useState('stickers');
   const [showUnlockCelebration, setShowUnlockCelebration] = useState(false);
   const [showClaimModal, setShowClaimModal] = useState(false);
-  
 
-  // Save state
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
   const [newlyPlacedNoteId, setNewlyPlacedNoteId] = useState(null);
@@ -174,7 +189,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
     }
   }, []);
 
-  // Track which item is currently selected
   const [selectedId, setSelectedId] = useState(null);
 
   // ── Load today's log ────────────────────────────────────────────────────
@@ -189,10 +203,10 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
           fetch(`${API}/prompts/daily`, { credentials: 'include' }),
           fetch('/api/progress/streak', { credentials: 'include' }),
         ]);
-        
+
         if (!logRes.ok) throw new Error('Failed to load log');
         const logData = await logRes.json();
-        
+
         setLog(logData.log);
         setPhotos(logData.photos   || []);
         setVideos(logData.videos   || []);
@@ -209,7 +223,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
         (logData.answers  || []).forEach(a => { if (a.rotation)  initRotations[`answer-${a.id}`]  = a.rotation; });
         setRotations(initRotations);
 
-        // THE CRITICAL FIX: Only set defaults if no answer exists
         if (logData.answers?.length > 0) {
           const savedAnswer = logData.answers[0];
           setAnswerText(savedAnswer.answer_text || '');
@@ -249,9 +262,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
     load();
   }, [date]);
 
-  // ── Fetch prompt when category changes ──────────────────────────────────
-
-
   // ── Art assets ─────────────────────────────────────────────────────────
 
   const loadAssets = useCallback(async () => {
@@ -267,53 +277,66 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
 
   const openLibrary = () => { setShowLibrary(true); loadAssets(); };
 
+  // ── ROTATION FIX: rndWrapperRefs stores a ref to each Rnd's outer wrapper div
+  // so handleRotateStart can always get the true bounding box for center calculation.
+  // We use a plain object (not useState) to avoid re-renders on ref assignment.
+  const rndWrapperRefs = useRef({});
 
-  const handleRotateStart = (e, itemKey, currentRotation, rndEl) => {
-    // Stop the click from bubbling up to react-rnd (prevents drag conflicts)
+  // Helper used by each Rnd's inner div to register its wrapper element.
+  // Usage: <div ref={el => rndWrapperRefs.current['photo-123'] = el} ...>
+  const setRndRef = (key, el) => { rndWrapperRefs.current[key] = el; };
+
+  // handleRotateStart: itemKey identifies which item, rndEl is the OUTER wrapper div
+  // (registered via setRndRef) — its bounding rect gives us the true visual center.
+  const handleRotateStart = (e, itemKey, currentRotation) => {
     e.stopPropagation();
     if (e.preventDefault) e.preventDefault();
 
-    // Get the exact center of the specific item we are rotating
-    const rect = rndEl.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
+    // Use the registered outer wrapper so getBoundingClientRect is always accurate,
+    // regardless of CSS transform applied to the inner .dl-rnd-item child.
+    const draggableEl = rndWrapperRefs.current[itemKey];
+    if (!draggableEl) return;
 
-    // Helper to safely get coordinates whether user is on a Mouse or Touch screen
+    const rect = draggableEl.getBoundingClientRect();
+    const centerX = rect.left + rect.width  / 2;
+    const centerY = rect.top  + rect.height / 2;
+
     const getPos = (ev) => ({
       x: ev.touches && ev.touches.length > 0 ? ev.touches[0].clientX : ev.clientX,
       y: ev.touches && ev.touches.length > 0 ? ev.touches[0].clientY : ev.clientY,
     });
 
-    const startPos = getPos(e.nativeEvent || e);
+    const startPos   = getPos(e.nativeEvent || e);
     const startAngle = angleBetween({ x: centerX, y: centerY }, startPos);
-    
-    // Create the movement tracker
+
+    // Capture the rotation value at the moment drag begins so we can delta from it
+    const baseRotation = currentRotation || 0;
+
     const onMove = (moveEvent) => {
-      const currentPos = getPos(moveEvent);
+      // Prevent scroll on touch devices while rotating
+      if (moveEvent.cancelable) moveEvent.preventDefault();
+      const currentPos   = getPos(moveEvent);
       const currentAngle = angleBetween({ x: centerX, y: centerY }, currentPos);
-      const delta = currentAngle - startAngle;
-      
-      // Update state dynamically based on the starting rotation
-      setRotations(prev => ({ 
-        ...prev, 
-        [itemKey]: (currentRotation || 0) + delta 
+      const delta        = currentAngle - startAngle;
+
+      setRotations(prev => ({
+        ...prev,
+        [itemKey]: baseRotation + delta,
       }));
     };
 
-    // Create the cleanup tracker
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('mouseup',   onUp);
       document.removeEventListener('touchmove', onMove);
-      document.removeEventListener('touchend', onUp);
-      setSaved(false); // Trigger save state when they let go
+      document.removeEventListener('touchend',  onUp);
+      setSaved(false);
     };
 
-    // Attach listeners directly to the document for global tracking
     document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    document.addEventListener('mouseup',   onUp);
     document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend', onUp);
+    document.addEventListener('touchend',  onUp);
   };
 
   // ── Photo upload ────────────────────────────────────────────────────────
@@ -465,7 +488,7 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
     } catch (err) { console.error('Update sticker error:', err); }
   };
 
-  // ── Streak Emoji Stickers (stored as notes) ──────────────────────────────
+  // ── Streak Emoji Stickers ────────────────────────────────────────────────
 
   const handlePlaceEmojiSticker = async (emoji) => {
     if (!log) return;
@@ -484,10 +507,10 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
       if (res.ok) {
         const newNote = await res.json();
         setNotes(prev => [...prev, newNote]);
-        setNewlyPlacedNoteId(newNote.id);          // ← highlight it
-        setTimeout(() => setNewlyPlacedNoteId(null), 4000); 
+        setNewlyPlacedNoteId(newNote.id);
+        setTimeout(() => setNewlyPlacedNoteId(null), 4000);
         setSaved(false);
-        if (claimingReward && onRewardClaimed) {   // ← notify Dashboard
+        if (claimingReward && onRewardClaimed) {
           onRewardClaimed();
         }
       }
@@ -514,7 +537,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
     } catch (err) { console.error('Delete emoji note error:', err); }
   };
 
-  // Use a streak special prompt
   const handleUseStreakPrompt = (promptText) => {
     setDailyPrompt({ id: null, prompt_text: promptText });
     setAnswerText('');
@@ -569,41 +591,74 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
     }
   };
 
-  // ── Save & Reset ─────────────────────────────────────────────────────────
-
+  // ── FIX 5: Save — normalise all positions relative to CANVAS_REF dimensions
+  // so Scrapbook can scale them to fit its own page dimensions proportionally.
+  // We also store canvas_ref_width and canvas_ref_height in the payload so
+  // older entries saved without normalisation can be detected and handled gracefully.
   const handleSave = async () => {
     if (!log) return;
     setSaving(true);
 
     try {
       const currentAnswer = answers[0];
-      const savedAnswer = await handleSaveAnswer(currentAnswer);
+      const savedAnswer   = await handleSaveAnswer(currentAnswer);
       const layoutAnswers = savedAnswer
         ? [{ ...savedAnswer, ...(currentAnswer || {}) }]
         : answers;
 
       await handleStickerUpdate();
 
+      // Read actual canvas size at save time for accurate normalisation
+      const { scaleX, scaleY } = getCanvasScale(canvasRef.current);
+
+      // Helper: normalise a component's geometry relative to the reference canvas size.
+      // This stores both the raw pixel values AND the normalised [0..1] ratios so the
+      // Scrapbook renderer can place them correctly regardless of its own page size.
+      const normalise = (item, typeKey, idField = 'id') => {
+        const rot = rotations[`${typeKey}-${item[idField]}`] || 0;
+        const nx  = ((item.pos_x  || 0) * scaleX) / CANVAS_REF_WIDTH;
+        const ny  = ((item.pos_y  || 0) * scaleY) / CANVAS_REF_HEIGHT;
+        const nw  = ((item.width  || 100) * scaleX) / CANVAS_REF_WIDTH;
+        const nh  = ((item.height || 100) * scaleY) / CANVAS_REF_HEIGHT;
+        return {
+          ...item,
+          rotation: rot,
+          // Normalised ratios (0-1 relative to reference canvas)
+          norm_x: nx,
+          norm_y: ny,
+          norm_w: nw,
+          norm_h: nh,
+        };
+      };
+
+      const payload = {
+        // FIX: include reference dimensions so Scrapbook knows the coordinate space
+        canvas_ref_width:  CANVAS_REF_WIDTH,
+        canvas_ref_height: CANVAS_REF_HEIGHT,
+        photos:   photos.map(p  => normalise(p,  'photo')),
+        videos:   videos.map(v  => normalise(v,  'video')),
+        audios:   audios.map(a  => normalise(a,  'audio')),
+        answers:  layoutAnswers.map(a => ({
+          ...normalise(a, 'answer', 'id'),
+          rotation: rotations['answer-0'] || rotations[`answer-${a.id}`] || 0,
+        })),
+        stickers: stickers.map(s => normalise(s, 'sticker')),
+        notes,
+      };
+
       const res = await fetch(`${API}/layout/${log.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          photos:   photos.map(p => ({ ...p, rotation: rotations[`photo-${p.id}`]   || 0 })),
-          videos:   videos.map(v => ({ ...v, rotation: rotations[`video-${v.id}`]   || 0 })),
-          audios:   audios.map(a => ({ ...a, rotation: rotations[`audio-${a.id}`]   || 0 })),
-          answers:  layoutAnswers.map(a => ({ ...a, rotation: rotations[`answer-${a.id || 0}`] || 0 })),
-          stickers: stickers.map(s => ({ ...s, rotation: rotations[`sticker-${s.id}`] || 0 })),
-          notes,
-        }),
+        body: JSON.stringify(payload),
       });
 
-    if (!res.ok) throw new Error('Failed to save layout');
+      if (!res.ok) throw new Error('Failed to save layout');
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
-      console.error("Save error:", err);
-      alert("Could not save layout.");
+      console.error('Save error:', err);
+      alert('Could not save layout.');
     } finally { setSaving(false); }
   };
 
@@ -632,12 +687,9 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
     );
   }
 
-  const rewardsUnlocked = forceRewardsUnlocked ||streak?.rewardsUnlocked;
+  const rewardsUnlocked = forceRewardsUnlocked || streak?.rewardsUnlocked;
   const currentStreak   = streak?.currentStreak || 0;
-
-  // Emoji notes (filter notes that start with EMOJI:)
-  const emojiNotes = notes.filter(n => n.content?.startsWith('EMOJI:'));
-
+  const emojiNotes      = notes.filter(n => n.content?.startsWith('EMOJI:'));
 
   return (
     <div className="dl-layout">
@@ -653,6 +705,7 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
           </div>
         </div>
       )}
+
       {/* ── Streak Claim Modal ── */}
       {showClaimModal && (
         <div className="dl-claim-overlay">
@@ -685,7 +738,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
 
       {/* ── Left Panel ── */}
       <div className="dl-panel">
-        {/* Streak mini badge — always visible if streak exists */}
         {streak && (
           <div className={`dl-streak-badge ${rewardsUnlocked ? 'dl-streak-badge--unlocked' : ''}`}>
             <span className="dl-streak-badge-flame">🔥</span>
@@ -696,19 +748,15 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
           </div>
         )}
         <div className="dl-panel-title">Create Today's Log</div>
-        
 
-      {/* ── Streak Rewards Panel ── */}
+        {/* ── Streak Rewards Panel ── */}
         {rewardsUnlocked && showStreakRewards ? (
           <div className="dl-streak-rewards">
-            {/* Header */}
             <div className="dl-streak-rewards-header">
               <span className="dl-streak-rewards-title">🏆 Streak Rewards</span>
               <button className="dl-streak-rewards-close" onClick={() => setShowStreakRewards(false)}>✕</button>
             </div>
             <p className="dl-streak-rewards-sub">Earned by completing 7 consecutive days of tasks!</p>
-
-            {/* Tabs */}
             <div className="dl-streak-tabs">
               <button
                 className={`dl-streak-tab ${streakRewardTab === 'stickers' ? 'dl-streak-tab--active' : ''}`}
@@ -723,8 +771,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 ✍️ Prompts
               </button>
             </div>
-
-            {/* Stickers tab */}
             {streakRewardTab === 'stickers' && (
               <div className="dl-streak-sticker-grid">
                 {STREAK_EMOJI_STICKERS.map(({ emoji, label }) => (
@@ -740,42 +786,31 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 ))}
               </div>
             )}
-
-            {/* Prompts tab */}
             {streakRewardTab === 'prompts' && (
               <div className="dl-streak-prompts-list">
                 {STREAK_SPECIAL_PROMPTS.map((prompt, i) => (
-                  <button
-                    key={i}
-                    className="dl-streak-prompt-btn"
-                    onClick={() => handleUseStreakPrompt(prompt)}
-                  >
+                  <button key={i} className="dl-streak-prompt-btn" onClick={() => handleUseStreakPrompt(prompt)}>
                     <span className="dl-streak-prompt-num">✦</span>
                     <span className="dl-streak-prompt-text">{prompt}</span>
                   </button>
                 ))}
               </div>
             )}
-
             <button className="dl-streak-rewards-back" onClick={() => setShowStreakRewards(false)}>
               ◀ Back to editor
             </button>
           </div>
 
-          ) : !showLibrary ? (
+        ) : !showLibrary ? (
           <div className="dl-editor">
-          {/* Streak Rewards open button */}
             {rewardsUnlocked && (
-              <button
-                className="dl-streak-open-btn"
-                onClick={() => setShowStreakRewards(true)}
-              >
+              <button className="dl-streak-open-btn" onClick={() => setShowStreakRewards(true)}>
                 <span className="dl-streak-open-icon">🏆</span>
                 <span>Open Streak Rewards</span>
                 <span className="dl-streak-open-badge">NEW</span>
               </button>
             )}
-            {/* Prompt type selector */}
+
             <div className="dl-field-group">
               <label className="dl-label">Choose prompt type:</label>
               <div className="dl-select-wrap">
@@ -795,7 +830,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
               </div>
             </div>
 
-            {/* Today's prompt */}
             {dailyPrompt && (
               <div className="dl-field-group">
                 <label className="dl-label">Today's prompt:</label>
@@ -805,7 +839,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
               </div>
             )}
 
-            {/* Answer textarea */}
             <textarea
               className="dl-textarea"
               placeholder="Write your thoughts here…"
@@ -814,53 +847,24 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
               rows={6}
             />
 
-            {/* Media add buttons */}
             <div className="dl-add-section">
               <span className="dl-add-label">Add:</span>
               <div className="dl-add-btns">
-                {/* Image */}
-                <button
-                  className="dl-add-btn"
-                  onClick={() => photoInputRef.current?.click()}
-                  disabled={uploadingPhoto}
-                  title="Upload an image"
-                >
+                <button className="dl-add-btn" onClick={() => photoInputRef.current?.click()} disabled={uploadingPhoto} title="Upload an image">
                   {uploadingPhoto ? '…' : '🖼 Image'}
                 </button>
-
-                {/* Video */}
-                <button
-                  className="dl-add-btn"
-                  onClick={() => videoInputRef.current?.click()}
-                  disabled={uploadingVideo}
-                  title="Upload a video (MP4, MOV, WebM — max 200MB)"
-                >
+                <button className="dl-add-btn" onClick={() => videoInputRef.current?.click()} disabled={uploadingVideo} title="Upload a video (MP4, MOV, WebM — max 200MB)">
                   {uploadingVideo ? '⏳ Uploading…' : '🎬 Video'}
                 </button>
-
-                {/* Audio */}
-                <button
-                  className="dl-add-btn"
-                  onClick={() => audioInputRef.current?.click()}
-                  disabled={uploadingAudio}
-                  title="Upload audio (MP3, WAV, AAC — max 50MB)"
-                >
+                <button className="dl-add-btn" onClick={() => audioInputRef.current?.click()} disabled={uploadingAudio} title="Upload audio (MP3, WAV, AAC — max 50MB)">
                   {uploadingAudio ? '⏳ Uploading…' : '🎵 Audio'}
                 </button>
               </div>
-
-              {/* Hidden file inputs */}
-              <input ref={photoInputRef} type="file" accept="image/*"
-                style={{ display: 'none' }} onChange={handlePhotoUpload} />
-              <input ref={videoInputRef} type="file"
-                accept="video/mp4,video/quicktime,video/webm,video/x-msvideo,video/mpeg"
-                style={{ display: 'none' }} onChange={handleVideoUpload} />
-              <input ref={audioInputRef} type="file"
-                accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/aac,audio/x-m4a"
-                style={{ display: 'none' }} onChange={handleAudioUpload} />
+              <input ref={photoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhotoUpload} />
+              <input ref={videoInputRef} type="file" accept="video/mp4,video/quicktime,video/webm,video/x-msvideo,video/mpeg" style={{ display: 'none' }} onChange={handleVideoUpload} />
+              <input ref={audioInputRef} type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/aac,audio/x-m4a" style={{ display: 'none' }} onChange={handleAudioUpload} />
             </div>
 
-            {/* Open Magic Library */}
             <button className="dl-library-btn" onClick={openLibrary}>
               Open Magic Library
             </button>
@@ -886,11 +890,7 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                     title={isLocked ? '🔒 Complete a 7-day streak to unlock!' : asset.name}
                     disabled={isLocked}
                   >
-                    <img
-                      src={`/${asset.file_path}`}
-                      alt={asset.name}
-                      onError={e => { e.target.style.display = 'none'; }}
-                    />
+                    <img src={`/${asset.file_path}`} alt={asset.name} onError={e => { e.target.style.display = 'none'; }} />
                     {isLocked && <span className="dl-asset-lock-icon">🔒</span>}
                   </button>
                 );
@@ -908,8 +908,7 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
             <button className={`dl-save-btn ${saved ? 'dl-save-btn--saved' : ''}`} onClick={handleSave} disabled={saving}>
               {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save'}
             </button>
-            <input ref={photoInputRef} type="file" accept="image/*"
-              style={{ display: 'none' }} onChange={handlePhotoUpload} />
+            <input ref={photoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhotoUpload} />
           </div>
         )}
 
@@ -924,8 +923,9 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
       </div>
 
       {/* ── Right Panel: Canvas ── */}
+      {/* FIX 6: attach canvasRef so we can measure actual rendered size on save */}
       <div className="dl-canvas-wrap">
-        <div className="dl-canvas">
+        <div className="dl-canvas" ref={canvasRef}>
           {/* Date stamp */}
           <div
             className="dl-canvas-date"
@@ -940,9 +940,7 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
             }}
           >
             <span>{display.weekday}</span>
-            <span>
-              {display.ordinal} {display.month} {display.year}
-            </span>
+            <span>{display.ordinal} {display.month} {display.year}</span>
           </div>
 
           {/* Videos */}
@@ -955,21 +953,17 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 size={{ width: video.width || 400, height: video.height || 300 }}
                 position={{ x: video.pos_x || 30, y: video.pos_y || 40 }}
                 onDragStop={(e, d) => {
-                  setVideos(prev => prev.map((v, idx) =>
-                    idx === i ? { ...v, pos_x: d.x, pos_y: d.y } : v
-                  ));
+                  setVideos(prev => prev.map((v, idx) => idx === i ? { ...v, pos_x: d.x, pos_y: d.y } : v));
                   setSaved(false);
                 }}
                 onResizeStop={(e, direction, ref, delta, position) => {
-                  setVideos(prev => prev.map((v, idx) =>
-                    idx === i ? {
-                      ...v,
-                      width: parseInt(ref.style.width),
-                      height: parseInt(ref.style.height),
-                      pos_x: position.x,
-                      pos_y: position.y,
-                    } : v
-                  ));
+                  setVideos(prev => prev.map((v, idx) => idx === i ? {
+                    ...v,
+                    width: parseInt(ref.style.width),
+                    height: parseInt(ref.style.height),
+                    pos_x: position.x,
+                    pos_y: position.y,
+                  } : v));
                   setSaved(false);
                 }}
                 bounds="parent"
@@ -985,8 +979,9 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 minHeight={100}
                 style={{ cursor: isSelected ? 'grab' : 'auto' }}
               >
-               {/* REPLACE dl-rnd-item div inside videos Rnd */}
+                {/* ROTATION FIX: ref on the outer wrapper gives us the true bounding rect */}
                 <div
+                  ref={el => setRndRef(`video-${video.id}`, el)}
                   className="dl-rnd-item"
                   onMouseDown={() => setSelectedId(`video-${video.id}`)}
                   onTouchStart={() => setSelectedId(`video-${video.id}`)}
@@ -1000,15 +995,8 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                     <div
                       className="dl-rotate-handle"
                       style={{ opacity: 1 }}
-                      onMouseDown={e => {
-                        // Just grab the parentElement
-                        const el = e.currentTarget.parentElement; 
-                        handleRotateStart(e, `video-${video.id}`, rotations[`video-${video.id}`] || 0, el);
-                      }}
-                      onTouchStart={e => { // Add touch support
-                        const el = e.currentTarget.parentElement;
-                        handleRotateStart(e, `video-${video.id}`, rotations[`video-${video.id}`] || 0, el);
-                      }}
+                      onMouseDown={e => { e.stopPropagation(); handleRotateStart(e, `video-${video.id}`, rotations[`video-${video.id}`] || 0); }}
+                      onTouchStart={e => { e.stopPropagation(); handleRotateStart(e, `video-${video.id}`, rotations[`video-${video.id}`] || 0); }}
                       title="Rotate"
                     >↻</div>
                   )}
@@ -1036,21 +1024,17 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 size={{ width: track.width || 350, height: track.height || 100 }}
                 position={{ x: track.pos_x || 30, y: track.pos_y || 200 }}
                 onDragStop={(e, d) => {
-                  setAudios(prev => prev.map((a, idx) =>
-                    idx === i ? { ...a, pos_x: d.x, pos_y: d.y } : a
-                  ));
+                  setAudios(prev => prev.map((a, idx) => idx === i ? { ...a, pos_x: d.x, pos_y: d.y } : a));
                   setSaved(false);
                 }}
                 onResizeStop={(e, direction, ref, delta, position) => {
-                  setAudios(prev => prev.map((a, idx) =>
-                    idx === i ? {
-                      ...a,
-                      width: parseInt(ref.style.width),
-                      height: parseInt(ref.style.height),
-                      pos_x: position.x,
-                      pos_y: position.y,
-                    } : a
-                  ));
+                  setAudios(prev => prev.map((a, idx) => idx === i ? {
+                    ...a,
+                    width: parseInt(ref.style.width),
+                    height: parseInt(ref.style.height),
+                    pos_x: position.x,
+                    pos_y: position.y,
+                  } : a));
                   setSaved(false);
                 }}
                 bounds="parent"
@@ -1066,8 +1050,8 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 minHeight={80}
                 style={{ cursor: isSelected ? 'grab' : 'auto' }}
               >
-                {/* REPLACE dl-rnd-item div inside audios Rnd */}
                 <div
+                  ref={el => setRndRef(`audio-${track.id}`, el)}
                   className="dl-rnd-item"
                   onMouseDown={() => setSelectedId(`audio-${track.id}`)}
                   onTouchStart={() => setSelectedId(`audio-${track.id}`)}
@@ -1082,14 +1066,8 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                     <div
                       className="dl-rotate-handle"
                       style={{ opacity: 1 }}
-                      onMouseDown={e => {
-                        const el = e.currentTarget.parentElement; 
-                        handleRotateStart(e, `audio-${track.id}`, rotations[`audio-${track.id}`] || 0, el);
-                      }}
-                      onTouchStart={e => { 
-                        const el = e.currentTarget.parentElement;
-                        handleRotateStart(e, `audio-${track.id}`, rotations[`audio-${track.id}`] || 0, el);
-                      }}
+                      onMouseDown={e => { e.stopPropagation(); handleRotateStart(e, `audio-${track.id}`, rotations[`audio-${track.id}`] || 0); }}
+                      onTouchStart={e => { e.stopPropagation(); handleRotateStart(e, `audio-${track.id}`, rotations[`audio-${track.id}`] || 0); }}
                       title="Rotate"
                     >↻</div>
                   )}
@@ -1112,9 +1090,8 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
             );
           })}
 
-          {/* Uploaded photos as stamps */}
+          {/* Photos */}
           {photos.map((photo, i) => {
-            // Rendered in LogPage for drag/resize, but could also show a static preview here if desired
             const isSelected = selectedId === `photo-${photo.id}`;
             return (
               <Rnd
@@ -1123,27 +1100,22 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 size={{ width: photo.width || 200, height: photo.height || 200 }}
                 position={{ x: photo.pos_x || 30, y: photo.pos_y || 40 }}
                 onDragStop={(e, d) => {
-                  setPhotos(prev => prev.map((p, idx) =>
-                    idx === i ? { ...p, pos_x: d.x, pos_y: d.y } : p
-                  ));
+                  setPhotos(prev => prev.map((p, idx) => idx === i ? { ...p, pos_x: d.x, pos_y: d.y } : p));
                   setSaved(false);
                 }}
                 onResizeStop={(e, direction, ref, delta, position) => {
-                  setPhotos(prev => prev.map((p, idx) =>
-                    idx === i ? {
-                      ...p,
-                      width: parseInt(ref.style.width),
-                      height: parseInt(ref.style.height),
-                      pos_x: position.x,
-                      pos_y: position.y,
-                    } : p
-                  ));
+                  setPhotos(prev => prev.map((p, idx) => idx === i ? {
+                    ...p,
+                    width: parseInt(ref.style.width),
+                    height: parseInt(ref.style.height),
+                    pos_x: position.x,
+                    pos_y: position.y,
+                  } : p));
                   setSaved(false);
                 }}
                 bounds="parent"
                 enableResizing={ENABLE_CORNERS}
                 resizeHandleStyles={RND_HANDLE_STYLES}
-                // Only show handles on hover via inline style toggle
                 resizeHandleComponent={isSelected ? undefined : {
                   topLeft: <div style={{ display: 'none' }} />,
                   topRight: <div style={{ display: 'none' }} />,
@@ -1154,14 +1126,9 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 minHeight={80}
                 style={{ cursor: isSelected ? 'grab' : 'auto' }}
               >
-                {/*
-                  KEY FIX: This wrapper must NOT have position:absolute,
-                  must fill 100% of the Rnd box, and must use pointerEvents:none
-                  on non-interactive children so Rnd receives all mouse events.
-                */} 
                 <div
+                  ref={el => setRndRef(`photo-${photo.id}`, el)}
                   className="dl-rnd-item"
-                  ref={el => { if (el) el._rndEl = el.closest('.react-draggable') || el; }}
                   onMouseDown={() => setSelectedId(`photo-${photo.id}`)}
                   onTouchStart={() => setSelectedId(`photo-${photo.id}`)}
                   style={{
@@ -1174,14 +1141,8 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                     <div
                       className="dl-rotate-handle"
                       style={{ opacity: 1 }}
-                      onMouseDown={e => {
-                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
-                        handleRotateStart(e, `photo-${photo.id}`, rotations[`photo-${photo.id}`] || 0, el);
-                      }}
-                      onTouchStart={e => {
-                        const el = e.currentTarget.parentElement;
-                        handleRotateStart(e, `photo-${photo.id}`, rotations[`photo-${photo.id}`] || 0, el);
-                      }}
+                      onMouseDown={e => { e.stopPropagation(); handleRotateStart(e, `photo-${photo.id}`, rotations[`photo-${photo.id}`] || 0); }}
+                      onTouchStart={e => { e.stopPropagation(); handleRotateStart(e, `photo-${photo.id}`, rotations[`photo-${photo.id}`] || 0); }}
                       title="Rotate"
                     >↻</div>
                   )}
@@ -1197,9 +1158,9 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 </div>
               </Rnd>
             );
-        })}
+          })}
 
-          {/* ── Prompt Answer ── */}
+          {/* Prompt Answer */}
           {answerText && dailyPrompt && (
             <Rnd
               key="answer-rnd"
@@ -1218,7 +1179,7 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
               onResizeStop={(e, direction, ref, delta, position) => {
                 setAnswers(prev => {
                   const updated = [...prev];
-                  const entry = updated[0] || {};
+                  const entry   = updated[0] || {};
                   updated[0] = {
                     ...entry,
                     pos_x: position.x,
@@ -1259,11 +1220,13 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                     className="dl-rotate-handle"
                     style={{ opacity: 1 }}
                     onMouseDown={e => {
-                      const el = e.currentTarget.parentElement;
+                      e.stopPropagation();
+                      const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
                       handleRotateStart(e, 'answer-0', rotations['answer-0'] || 0, el);
                     }}
                     onTouchStart={e => {
-                      const el = e.currentTarget.parentElement;
+                      e.stopPropagation();
+                      const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
                       handleRotateStart(e, 'answer-0', rotations['answer-0'] || 0, el);
                     }}
                     title="Rotate"
@@ -1279,8 +1242,7 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
             </Rnd>
           )}
 
-
-          {/* ── Stickers ── */}
+          {/* Stickers */}
           {stickers.map((sticker, i) => {
             const isSelected = selectedId === `sticker-${sticker.id}`;
             return (
@@ -1290,21 +1252,17 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 size={{ width: sticker.width || 100, height: sticker.height || 100 }}
                 position={{ x: sticker.pos_x || 200, y: sticker.pos_y || 100 }}
                 onDragStop={(e, d) => {
-                  setStickers(prev => prev.map((s, idx) =>
-                    idx === i ? { ...s, pos_x: d.x, pos_y: d.y } : s
-                  ));
+                  setStickers(prev => prev.map((s, idx) => idx === i ? { ...s, pos_x: d.x, pos_y: d.y } : s));
                   setSaved(false);
                 }}
                 onResizeStop={(e, direction, ref, delta, position) => {
-                  setStickers(prev => prev.map((s, idx) =>
-                    idx === i ? {
-                      ...s,
-                      width: parseInt(ref.style.width),
-                      height: parseInt(ref.style.height),
-                      pos_x: position.x,
-                      pos_y: position.y,
-                    } : s
-                  ));
+                  setStickers(prev => prev.map((s, idx) => idx === i ? {
+                    ...s,
+                    width: parseInt(ref.style.width),
+                    height: parseInt(ref.style.height),
+                    pos_x: position.x,
+                    pos_y: position.y,
+                  } : s));
                   setSaved(false);
                 }}
                 bounds="parent"
@@ -1335,11 +1293,13 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                       className="dl-rotate-handle"
                       style={{ opacity: 1 }}
                       onMouseDown={e => {
+                        e.stopPropagation();
                         const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
                         handleRotateStart(e, `sticker-${sticker.id}`, rotations[`sticker-${sticker.id}`] || 0, el);
                       }}
                       onTouchStart={e => {
-                        const el = e.currentTarget.parentElement;
+                        e.stopPropagation();
+                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
                         handleRotateStart(e, `sticker-${sticker.id}`, rotations[`sticker-${sticker.id}`] || 0, el);
                       }}
                       title="Rotate"
@@ -1348,8 +1308,6 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                   <img src={`/${sticker.asset_path}`} alt={sticker.asset_name}
                     style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }}
                     onError={e => { e.target.style.display = 'none'; }} />
-                  
-                  {/* Delete button only shows if selected */}
                   <button className="dl-canvas-delete" style={{ opacity: isSelected ? 1 : 0, pointerEvents: isSelected ? 'auto' : 'none' }}
                     onMouseDown={e => e.stopPropagation()}
                     onClick={e => { e.stopPropagation(); handleDeleteSticker(sticker.id); }}>×</button>
@@ -1358,11 +1316,11 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
             );
           })}
 
-{/* ── Emoji Stickers (streak rewards placed by user) ── */}
+          {/* Emoji Stickers */}
           {emojiNotes.map((note) => {
             const isSelected = selectedId === `note-${note.id}`;
-            const isNew = newlyPlacedNoteId === note.id;
-            const emoji = note.content.replace('EMOJI:', '');
+            const isNew      = newlyPlacedNoteId === note.id;
+            const emoji      = note.content.replace('EMOJI:', '');
             return (
               <Rnd
                 key={note.id}
@@ -1370,21 +1328,17 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                 size={{ width: note.width || 80, height: note.height || 80 }}
                 position={{ x: note.pos_x || 100, y: note.pos_y || 100 }}
                 onDragStop={(e, d) => {
-                  setNotes(prev => prev.map(n =>
-                    n.id === note.id ? { ...n, pos_x: d.x, pos_y: d.y } : n
-                  ));
+                  setNotes(prev => prev.map(n => n.id === note.id ? { ...n, pos_x: d.x, pos_y: d.y } : n));
                   setSaved(false);
                 }}
                 onResizeStop={(e, direction, ref, delta, position) => {
-                  setNotes(prev => prev.map(n =>
-                    n.id === note.id ? {
-                      ...n,
-                      width: parseInt(ref.style.width),
-                      height: parseInt(ref.style.height),
-                      pos_x: position.x,
-                      pos_y: position.y,
-                    } : n
-                  ));
+                  setNotes(prev => prev.map(n => n.id === note.id ? {
+                    ...n,
+                    width: parseInt(ref.style.width),
+                    height: parseInt(ref.style.height),
+                    pos_x: position.x,
+                    pos_y: position.y,
+                  } : n));
                   setSaved(false);
                 }}
                 bounds="parent"
@@ -1418,11 +1372,13 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
                       className="dl-rotate-handle"
                       style={{ opacity: 1 }}
                       onMouseDown={e => {
-                        const el = e.currentTarget.parentElement;
+                        e.stopPropagation();
+                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
                         handleRotateStart(e, `note-${note.id}`, rotations[`note-${note.id}`] || 0, el);
                       }}
                       onTouchStart={e => {
-                        const el = e.currentTarget.parentElement;
+                        e.stopPropagation();
+                        const el = e.currentTarget.closest('.react-draggable') || e.currentTarget.parentElement;
                         handleRotateStart(e, `note-${note.id}`, rotations[`note-${note.id}`] || 0, el);
                       }}
                       title="Rotate"

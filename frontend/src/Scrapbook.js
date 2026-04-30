@@ -2,47 +2,85 @@ import React, { useState, useEffect, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import './Scrapbook.css';
 
-const BACKEND_URL = 'http://localhost:5000'; 
+const BACKEND_URL = 'http://localhost:5000';
 const API = '/api/scrapbook';
+
+// ── FIX 1: Reference canvas dimensions (must match DayLog.js constants) ───
+// The DayLog canvas is 680×540 px (max-width + min-height from CSS).
+// All saved positions are stored as normalised ratios (norm_x, norm_y, norm_w, norm_h)
+// relative to these reference dimensions. The Scrapbook page is smaller, so we
+// multiply the ratios by the Scrapbook page size to place items correctly.
+const CANVAS_REF_WIDTH  = 680;
+const CANVAS_REF_HEIGHT = 540;
+
+// ── FIX 2: Scrapbook page content area dimensions ─────────────────────────
+// The usable area inside each .sb-log-page (excluding padding).
+// Adjust if you change the CSS padding of .sb-log-page.
+const SB_PAGE_CONTENT_WIDTH  = 400; // ≈ half of 980px spread minus padding/spine
+const SB_PAGE_CONTENT_HEIGHT = 520; // matches sb-log-page min-height minus padding
+
+// ── FIX 3: Position/size resolver ─────────────────────────────────────────
+// Converts saved item geometry to Scrapbook page coordinates.
+// If norm_x/norm_y exist (new format), use them to scale proportionally.
+// Otherwise fall back to raw pixel positions, scaled by the ratio of page sizes
+// (handles entries saved before normalisation was added).
+function resolveGeometry(item, side, pageW = SB_PAGE_CONTENT_WIDTH, pageH = SB_PAGE_CONTENT_HEIGHT) {
+  // New format: normalised ratios stored alongside raw pixels
+  if (item.norm_x !== undefined && item.norm_y !== undefined) {
+    return {
+      x:      Math.round(item.norm_x * pageW),
+      y:      Math.round(item.norm_y * pageH),
+      width:  Math.round((item.norm_w  || 0.2) * pageW),
+      height: Math.round((item.norm_h  || 0.2) * pageH),
+    };
+  }
+
+  // Legacy format: raw pixel positions saved against the DayLog canvas.
+  // Scale them down proportionally to fit the scrapbook page.
+  const scaleX = pageW / CANVAS_REF_WIDTH;
+  const scaleY = pageH / CANVAS_REF_HEIGHT;
+  const rawX   = item.pos_x   || (side === 'left' ? 20 : 30);
+  const rawY   = item.pos_y   || 60;
+  const rawW   = item.width   || 200;
+  const rawH   = item.height  || 160;
+
+  return {
+    x:      Math.round(rawX * scaleX),
+    y:      Math.round(rawY * scaleY),
+    width:  Math.round(rawW * scaleX),
+    height: Math.round(rawH * scaleY),
+  };
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function formatLogDate(dateStr) {
-  // 1. Safety check: if dateStr is missing, return placeholders
-  if (!dateStr) {
-    return { weekday: 'Loading...', full: 'Date pending' };
-  }
-
-  // 2. Ensure we handle the string format correctly
-  // If dateStr is an ISO string, we split to get the YYYY-MM-DD part
+  if (!dateStr) return { weekday: 'Loading...', full: 'Date pending' };
   const datePart = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
   const d = new Date(datePart + 'T00:00:00');
-
-  // 3. Final check if the date object is valid
-  if (isNaN(d.getTime())) {
-    return { weekday: 'Unknown', full: 'Invalid Date' };
-  }
-
+  if (isNaN(d.getTime())) return { weekday: 'Unknown', full: 'Invalid Date' };
   const day = d.getDate();
   const s = ['th','st','nd','rd'];
   const v = day % 100;
   const ordinal = day + (s[(v - 20) % 10] || s[v] || s[0]);
-  
   return {
     weekday: d.toLocaleDateString('en-US', { weekday: 'long' }),
     full: `${ordinal} ${d.toLocaleDateString('en-US', { month: 'long' })} ${d.getFullYear()}`,
   };
 }
 
-// ── Scrapbook Page (two logs side by side) ─────────────────────────────────
+// ── FIX 4: Individual page refs for single-page export ────────────────────
+// We keep a map of { pageIndex -> { left: ref, right: ref } } so the Share
+// button can capture only the chosen page, not the whole spread.
 
-function ScrapbookPage({ leftLog, rightLog }) {
+// ── Scrapbook Page ─────────────────────────────────────────────────────────
+
+function ScrapbookPage({ leftLog, rightLog, leftRef, rightRef }) {
   return (
     <div className="sb-spread">
-      {/* Left page */}
-      <div className="sb-page sb-page--left">
+      {/* Left page — FIX: attach forwarded ref for single-page capture */}
+      <div className="sb-page sb-page--left" ref={leftRef}>
         {leftLog ? (
-          // KEY PROP
           <LogPage key={`left-${leftLog.log_date}`} log={leftLog} side="left" />
         ) : (
           <div className="sb-page-empty" />
@@ -52,8 +90,8 @@ function ScrapbookPage({ leftLog, rightLog }) {
       {/* Spine */}
       <div className="sb-spine" />
 
-      {/* Right page */}
-      <div className="sb-page sb-page--right">
+      {/* Right page — FIX: attach forwarded ref for single-page capture */}
+      <div className="sb-page sb-page--right" ref={rightRef}>
         {rightLog ? (
           <LogPage key={`right-${rightLog.log_date}`} log={rightLog} side="right" />
         ) : (
@@ -67,7 +105,7 @@ function ScrapbookPage({ leftLog, rightLog }) {
 // ── Individual log page ────────────────────────────────────────────────────
 
 function LogPage({ log, side }) {
-  const [detail, setDetail] = useState(null);
+  const [detail,  setDetail]  = useState(null);
   const [loading, setLoading] = useState(true);
   const display = formatLogDate(log.log_date);
 
@@ -91,7 +129,6 @@ function LogPage({ log, side }) {
 
   return (
     <div className="sb-log-page">
-      {/* Date header */}
       <div className={`sb-date ${side === 'left' ? 'sb-date--left' : 'sb-date--right'}`}>
         <span className="sb-date-weekday">{display.weekday}</span>
         <span className="sb-date-full">{display.full}</span>
@@ -101,87 +138,140 @@ function LogPage({ log, side }) {
 
       {!loading && detail && (
         <>
-          {/* REPLACE photos map in LogPage */}
-          {detail.photos?.map((photo, i) => (
-            <div key={photo.id} className="sb-stamp-wrap" style={{
-              top: `${(photo.pos_y || 60) + i * 15}px`,
-              left: `${(photo.pos_x || (side === 'left' ? 20 : 30)) + i * 10}px`,
-              transform: `rotate(${photo.rotation || 0}deg)`,  // ADD
-            }}>
-              <WashiTapeDecor index={i} />
-              <div className="sb-stamp">
-                <img src={`/${photo.file_path}`} alt={photo.original_name || 'memory'} />
+          {/* ── FIX 5: Photos — proportionally scaled from DayLog canvas ── */}
+          {detail.photos?.map((photo, i) => {
+            const geo = resolveGeometry(photo, side);
+            return (
+              <div key={photo.id} className="sb-stamp-wrap" style={{
+                // FIX: use resolved geometry instead of raw pos_x/pos_y
+                top:       `${geo.y}px`,
+                left:      `${geo.x}px`,
+                transform: `rotate(${photo.rotation || 0}deg)`,
+              }}>
+                <WashiTapeDecor index={i} />
+                <div className="sb-stamp" style={{ width: `${geo.width}px`, height: `${geo.height}px` }}>
+                  <img
+                    src={`/${photo.file_path}`}
+                    alt={photo.original_name || 'memory'}
+                    // FIX: override the fixed 200×190px CSS with resolved dimensions
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
-          {/* REPLACE videos map in LogPage */}
-          {detail.videos?.map(video => (
-            <div key={video.id} className="sb-media-item sb-video-item" style={{
-              top: `${video.pos_y || 80}px`,
-              left: `${video.pos_x || (side === 'left' ? 40 : 30)}px`,
-              width: `${video.width || 320}px`,
-              height: `${video.height || 180}px`,
-              zIndex: video.z_index || 0,
-              transform: `rotate(${video.rotation || 0}deg)`,  // ADD
-            }}>
-              <video src={`/${video.file_path}`} controls muted playsInline />
-            </div>
-          ))}
-
-          {/* REPLACE audio map in LogPage */}
-          {detail.audio?.map(audio => (
-            <div key={audio.id} className="sb-media-item sb-audio-item" style={{
-              top: `${audio.pos_y || 180}px`,
-              left: `${audio.pos_x || (side === 'left' ? 40 : 30)}px`,
-              width: `${audio.width || 300}px`,
-              height: `${audio.height || 90}px`,
-              zIndex: audio.z_index || 0,
-              transform: `rotate(${audio.rotation || 0}deg)`,  // ADD
-            }}>
-              <div className="sb-audio-card">
-                <span className="sb-audio-label">🎵 {audio.original_name || 'Audio'}</span>
-                <audio src={`/${audio.file_path}`} controls />
+          {/* ── FIX 6: Videos — proportionally scaled ── */}
+          {detail.videos?.map(video => {
+            const geo = resolveGeometry(video, side);
+            return (
+              <div key={video.id} className="sb-media-item sb-video-item" style={{
+                top:       `${geo.y}px`,
+                left:      `${geo.x}px`,
+                width:     `${geo.width}px`,
+                height:    `${geo.height}px`,
+                zIndex:    video.z_index || 0,
+                transform: `rotate(${video.rotation || 0}deg)`,
+              }}>
+                <video src={`/${video.file_path}`} controls muted playsInline
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
-            </div>
-          ))}
+            );
+          })}
 
-          {/* REPLACE answers map in LogPage */}
-          {detail.answers?.map(answer => (
-            <div key={answer.id} className="sb-answer-wrap" style={{
-              top: `${answer.pos_y || 80}px`,
-              left: `${answer.pos_x || (side === 'left' ? 20 : 15)}px`,
-              width: `${answer.width || 260}px`,
-              minHeight: `${answer.height || 120}px`,
-              transform: `rotate(${answer.rotation || 0}deg)`,  // ADD
-            }}>
-              <div className="sb-answer-prompt">{answer.prompt_text}:</div>
-              <div className="sb-answer-washi">
-                <span className="sb-answer-text">{answer.answer_text}</span>
+          {/* ── FIX 7: Audio — proportionally scaled ── */}
+          {detail.audio?.map(audio => {
+            const geo = resolveGeometry(audio, side);
+            return (
+              <div key={audio.id} className="sb-media-item sb-audio-item" style={{
+                top:       `${geo.y}px`,
+                left:      `${geo.x}px`,
+                width:     `${geo.width}px`,
+                height:    `${Math.max(geo.height, 70)}px`, // min height for audio controls
+                zIndex:    audio.z_index || 0,
+                transform: `rotate(${audio.rotation || 0}deg)`,
+              }}>
+                <div className="sb-audio-card">
+                  <span className="sb-audio-label">🎵 {audio.original_name || 'Audio'}</span>
+                  <audio src={`/${audio.file_path}`} controls style={{ width: '100%' }} />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
-          {/* REPLACE stickers map in LogPage */}
-          {detail.stickers?.map((sticker) => (
-            <div key={sticker.id} className="sb-sticker" style={{
-              top: `${sticker.pos_y || 120}px`,
-              left: `${sticker.pos_x || 160}px`,
-              width: `${sticker.width || 60}px`,
-              height: `${sticker.height || 60}px`,
-              transform: `rotate(${sticker.rotation || 0}deg)`,  // ADD
-            }}>
-              <img src={`${BACKEND_URL}/assets/tape/${sticker.asset_path.split('/').pop()}`}
-                alt={sticker.asset_name} onError={e => { e.target.style.display = 'none'; }} />
-            </div>
-          ))}
+          {/* ── FIX 8: Answers — proportionally scaled ── */}
+          {detail.answers?.map(answer => {
+            const geo = resolveGeometry(answer, side);
+            return (
+              <div key={answer.id} className="sb-answer-wrap" style={{
+                top:       `${geo.y}px`,
+                left:      `${geo.x}px`,
+                width:     `${geo.width}px`,
+                minHeight: `${geo.height}px`,
+                transform: `rotate(${answer.rotation || 0}deg)`,
+              }}>
+                <div className="sb-answer-prompt">{answer.prompt_text}:</div>
+                <div className="sb-answer-washi">
+                  <span className="sb-answer-text">{answer.answer_text}</span>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* ── FIX 9: Stickers (art assets) — proportionally scaled ── */}
+          {detail.stickers?.map(sticker => {
+            const geo = resolveGeometry(sticker, side);
+            return (
+              <div key={sticker.id} className="sb-sticker" style={{
+                top:       `${geo.y}px`,
+                left:      `${geo.x}px`,
+                width:     `${geo.width}px`,
+                height:    `${geo.height}px`,
+                transform: `rotate(${sticker.rotation || 0}deg)`,
+              }}>
+                <img
+                  src={`${BACKEND_URL}/assets/tape/${sticker.asset_path.split('/').pop()}`}
+                  alt={sticker.asset_name}
+                  onError={e => { e.target.style.display = 'none'; }}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              </div>
+            );
+          })}
+
+          {/* ── FIX 10: Emoji notes (streak stickers) — proportionally scaled ── */}
+          {detail.notes?.filter(n => n.content?.startsWith('EMOJI:')).map(note => {
+            const geo   = resolveGeometry(note, side);
+            const emoji = note.content.replace('EMOJI:', '');
+            // Scale font size proportionally as well
+            const baseFontSize  = note.font_size || 48;
+            const scaledFont    = Math.round(baseFontSize * (SB_PAGE_CONTENT_WIDTH / CANVAS_REF_WIDTH));
+            return (
+              <div key={note.id} style={{
+                position:  'absolute',
+                top:       `${geo.y}px`,
+                left:      `${geo.x}px`,
+                width:     `${geo.width}px`,
+                height:    `${geo.height}px`,
+                fontSize:  `${scaledFont}px`,
+                display:   'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: 1,
+                userSelect: 'none',
+                transform: `rotate(${note.rotation || 0}deg)`,
+              }}>
+                {emoji}
+              </div>
+            );
+          })}
         </>
       )}
     </div>
   );
 }
 
-// ── Decorative washi tape piece ────────────────────────────────────────────
+// ── Decorative washi tape ──────────────────────────────────────────────────
 
 function WashiTapeDecor({ index }) {
   const colors = [
@@ -198,13 +288,106 @@ function WashiTapeDecor({ index }) {
   );
 }
 
+// ── FIX 11: Single-page share modal ───────────────────────────────────────
+// Replaces the previous "capture entire spread" logic.
+// Users choose which page (left / right) they want to export.
+
+function ShareModal({ leftRef, rightRef, leftLog, rightLog, onClose }) {
+  const [exporting, setExporting] = useState(false);
+
+  const captureRef = async (ref, filename) => {
+    if (!ref?.current) return;
+    setExporting(true);
+    try {
+      const canvas = await html2canvas(ref.current, {
+        backgroundColor: '#faf5ee', // matches .sb-page paper colour
+        scale: 2,
+        useCORS: true,
+        imageTimeout: 30000,
+        allowTaint: false,
+        scrollX: -window.scrollX,
+        scrollY: -window.scrollY,
+      });
+      canvas.toBlob(blob => {
+        if (!blob) { alert('Unable to create image. Please try again.'); return; }
+        const url  = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href     = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        onClose();
+      }, 'image/png');
+    } catch (err) {
+      console.error('Export error:', err);
+      alert('Unable to export. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const leftDate  = leftLog  ? formatLogDate(leftLog.log_date).full  : null;
+  const rightDate = rightLog ? formatLogDate(rightLog.log_date).full : null;
+
+  return (
+    <div className="sb-share-modal-overlay" onClick={onClose}>
+      <div className="sb-share-modal" onClick={e => e.stopPropagation()}>
+        <h3 className="sb-share-modal-title">Share a page</h3>
+        <p className="sb-share-modal-sub">Choose which page to download as a PNG.</p>
+
+        <div className="sb-share-modal-options">
+          {/* Left page option */}
+          {leftLog ? (
+            <button
+              className="sb-share-page-btn"
+              disabled={exporting}
+              onClick={() => captureRef(leftRef, `scrapbook-${leftLog.log_date}.png`)}
+            >
+              <span className="sb-share-page-icon">📖</span>
+              <span className="sb-share-page-label">{leftDate}</span>
+            </button>
+          ) : (
+            <div className="sb-share-page-btn sb-share-page-btn--empty">Empty page</div>
+          )}
+
+          {/* Right page option */}
+          {rightLog ? (
+            <button
+              className="sb-share-page-btn"
+              disabled={exporting}
+              onClick={() => captureRef(rightRef, `scrapbook-${rightLog.log_date}.png`)}
+            >
+              <span className="sb-share-page-icon">📄</span>
+              <span className="sb-share-page-label">{rightDate}</span>
+            </button>
+          ) : (
+            <div className="sb-share-page-btn sb-share-page-btn--empty">Empty page</div>
+          )}
+        </div>
+
+        {exporting && <p className="sb-share-exporting">Preparing download…</p>}
+
+        <button className="sb-share-modal-cancel" onClick={onClose}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Scrapbook Component ───────────────────────────────────────────────
 
 export default function Scrapbook() {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [pageIndex, setPageIndex] = useState(0); // each "page" shows 2 logs
+  const [logs,       setLogs]       = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState(null);
+  const [pageIndex,  setPageIndex]  = useState(0);
+  // FIX 12: showShareModal replaces the old inline sharing state
+  const [showShareModal, setShowShareModal] = useState(false);
+
+  // FIX 13: Individual page refs for single-page capture
+  const leftPageRef  = useRef(null);
+  const rightPageRef = useRef(null);
 
   useEffect(() => {
     async function load() {
@@ -213,8 +396,7 @@ export default function Scrapbook() {
       try {
         const res = await fetch(`${API}/logs`, { credentials: 'include' });
         if (!res.ok) throw new Error('Failed to load logs');
-        const data = await res.json();
-        setLogs(data);
+        setLogs(await res.json());
       } catch (err) {
         setError(err.message);
       } finally {
@@ -224,51 +406,12 @@ export default function Scrapbook() {
     load();
   }, []);
 
-  const bookRef = useRef(null);
-  const [sharing, setSharing] = useState(false);
   const totalPages = Math.ceil(logs.length / 2);
-  const leftLog = logs[pageIndex * 2] || null;
-  const rightLog = logs[pageIndex * 2 + 1] || null;
+  const leftLog    = logs[pageIndex * 2]     || null;
+  const rightLog   = logs[pageIndex * 2 + 1] || null;
 
   const goPrev = () => setPageIndex(p => Math.max(0, p - 1));
   const goNext = () => setPageIndex(p => Math.min(totalPages - 1, p + 1));
-
-  const handleShare = async () => {
-    if (!bookRef.current) return;
-    setSharing(true);
-    try {
-      const canvas = await html2canvas(bookRef.current, {
-        backgroundColor: '#f5f0e8',
-        scale: 2,
-        useCORS: true,
-        imageTimeout: 30000,
-        allowTaint: false,
-        scrollX: -window.scrollX,
-        scrollY: -window.scrollY,
-        windowWidth: document.documentElement.scrollWidth,
-        windowHeight: document.documentElement.scrollHeight,
-      });
-
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          throw new Error('Unable to create image blob');
-        }
-        const url = URL.createObjectURL(blob);
-        const downloadLink = document.createElement('a');
-        downloadLink.href = url;
-        downloadLink.download = `scrapbook-page-${pageIndex + 1}.png`;
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        downloadLink.remove();
-        URL.revokeObjectURL(url);
-      }, 'image/png');
-    } catch (err) {
-      console.error('Share error:', err);
-      alert('Unable to export scrapbook. Please try again.');
-    } finally {
-      setSharing(false);
-    }
-  };
 
   // ── Render ──────────────────────────────────────────────────────────────
 
@@ -302,44 +445,41 @@ export default function Scrapbook() {
 
   return (
     <div className="sb-layout">
-      {/* Share button */}
+      {/* FIX 14: Share button now opens a modal to choose which page to export */}
       <div className="sb-toolbar">
-        <button
-          className="sb-share-btn"
-          onClick={handleShare}
-          disabled={sharing}
-        >
-          {sharing ? 'Preparing…' : 'Share'}
+        <button className="sb-share-btn" onClick={() => setShowShareModal(true)}>
+          Share
         </button>
       </div>
 
-      {/* Book spread */}
-      <div className="sb-book-wrap" ref={bookRef}>
-        <ScrapbookPage key={pageIndex} leftLog={leftLog} rightLog={rightLog} />
+      {/* Book spread — refs are passed down to each page div */}
+      <div className="sb-book-wrap">
+        <ScrapbookPage
+          key={pageIndex}
+          leftLog={leftLog}
+          rightLog={rightLog}
+          leftRef={leftPageRef}
+          rightRef={rightPageRef}
+        />
       </div>
 
-      {/* Pagination arrows */}
+      {/* Pagination */}
       <div className="sb-nav">
-        <button
-          className="sb-arrow sb-arrow--left"
-          onClick={goPrev}
-          disabled={pageIndex === 0}
-          aria-label="Previous page"
-        >
-          ◀
-        </button>
-        <span className="sb-page-indicator">
-          {pageIndex + 1} / {totalPages}
-        </span>
-        <button
-          className="sb-arrow sb-arrow--right"
-          onClick={goNext}
-          disabled={pageIndex >= totalPages - 1}
-          aria-label="Next page"
-        >
-          ▶
-        </button>
+        <button className="sb-arrow sb-arrow--left" onClick={goPrev} disabled={pageIndex === 0} aria-label="Previous page">◀</button>
+        <span className="sb-page-indicator">{pageIndex + 1} / {totalPages}</span>
+        <button className="sb-arrow sb-arrow--right" onClick={goNext} disabled={pageIndex >= totalPages - 1} aria-label="Next page">▶</button>
       </div>
+
+      {/* FIX 15: Single-page share modal */}
+      {showShareModal && (
+        <ShareModal
+          leftRef={leftPageRef}
+          rightRef={rightPageRef}
+          leftLog={leftLog}
+          rightLog={rightLog}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
     </div>
   );
 }
