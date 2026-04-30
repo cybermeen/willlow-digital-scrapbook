@@ -879,22 +879,21 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
               {!assetsLoading && assets.length === 0 && (
                 <p className="dl-library-empty">No assets found</p>
               )}
-              {assets.map((asset, idx) => {
-                const NUM_LOCKED = 3;
-                const isLocked = idx >= assets.length - NUM_LOCKED && !rewardsUnlocked;
-                return (
-                  <button
-                    key={asset.id}
-                    className={`dl-asset-btn${isLocked ? ' dl-asset-btn--locked' : ''}`}
-                    onClick={() => { if (!isLocked) handlePlaceSticker(asset); }}
-                    title={isLocked ? '🔒 Complete a 7-day streak to unlock!' : asset.name}
-                    disabled={isLocked}
-                  >
-                    <img src={`/${asset.file_path}`} alt={asset.name} onError={e => { e.target.style.display = 'none'; }} />
-                    {isLocked && <span className="dl-asset-lock-icon">🔒</span>}
-                  </button>
-                );
-              })}
+              {assets.map((asset) => (
+                <button
+                  key={asset.id}
+                  className="dl-asset-btn" // Removed conditional locked class
+                  onClick={() => handlePlaceSticker(asset)} // Removed !isLocked check
+                  title={asset.name} // Removed locked title
+                >
+                  <img
+                    src={`/${asset.file_path}`}
+                    alt={asset.name}
+                    onError={e => { e.target.style.display = 'none'; }}
+                  />
+                  {/* Removed the {isLocked && ...} lock icon span */}
+                </button>
+              ))}
             </div>
             <button className="dl-library-back" onClick={() => setShowLibrary(false)}>◀</button>
           </div>
