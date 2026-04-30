@@ -5,6 +5,8 @@ import DayLog from './DayLog';
 import Scrapbook from './Scrapbook';
 import './Dashboard.css';
 
+const BACKEND_URL = 'http://localhost:5000';
+
 function Dashboard({ user, onLogout }) {
   const [activeTab, setActiveTab] = useState('today');
 

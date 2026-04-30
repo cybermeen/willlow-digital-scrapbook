@@ -242,10 +242,9 @@
 /* ─── Prompt Answer — FIX: blue washi matching DayLog canvas ───────────── */
 /* This must match .dl-canvas-washi in DayLog.css exactly. */
 .sb-answer-prompt {
-  font-family: 'Nunito', sans-serif;
+  font-style: italic;
   font-size: 0.72rem;
   font-weight: 700;
-  text-transform: uppercase;
   color: #6b8a9a;
   margin-bottom: 0.4rem;
   letter-spacing: 1px;
