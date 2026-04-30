@@ -5,7 +5,7 @@ const auth = require('../auth/auth');
 
 router.use(auth);
 
-// GET /api/progress/stats — dashboard stats (today + overall)
+// GET /api/progress/stats — dashboard stats
 router.get('/stats', async (req, res) => {
   try {
     const stats = await ProgressService.getDashboardStats(req.session.userId);

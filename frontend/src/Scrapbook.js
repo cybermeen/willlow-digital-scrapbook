@@ -5,35 +5,43 @@ import './Scrapbook.css';
 const BACKEND_URL = 'http://localhost:5000';
 const API = '/api/scrapbook';
 
-// ── Reference canvas dimensions (must match DayLog.js constants) ──────────
 const CANVAS_REF_WIDTH  = 680;
 const CANVAS_REF_HEIGHT = 540;
-
-// ── Scrapbook page content area dimensions ────────────────────────────────
 const SB_PAGE_CONTENT_WIDTH  = 400;
 const SB_PAGE_CONTENT_HEIGHT = 520;
 
-// ── Position/size resolver ────────────────────────────────────────────────
 function resolveGeometry(item, side, pageW = SB_PAGE_CONTENT_WIDTH, pageH = SB_PAGE_CONTENT_HEIGHT) {
-  if (item.norm_x !== undefined && item.norm_x !== null) {
-    return {
-      x:      Math.round(item.norm_x * pageW),
-      y:      Math.round(item.norm_y * pageH),
-      width:  Math.round((item.norm_w  || 0.2) * pageW),
-      height: Math.round((item.norm_h  || 0.2) * pageH),
-    };
-  }
   const scaleX = pageW / CANVAS_REF_WIDTH;
   const scaleY = pageH / CANVAS_REF_HEIGHT;
+
+  // Calculate width/height first. If the normalized data is missing, 
+  // safely fall back to scaling the absolute dimensions from the database.
+  const resolvedWidth = (item.norm_w != null) 
+    ? Math.round(item.norm_w * pageW) 
+    : Math.round((item.width || 200) * scaleX);
+
+  const resolvedHeight = (item.norm_h != null) 
+    ? Math.round(item.norm_h * pageH) 
+    : Math.round((item.height || 160) * scaleY);
+
+  // Apply coordinates
+  if (item.norm_x != null && item.norm_y != null) {
+    return {
+      x: Math.round(item.norm_x * pageW),
+      y: Math.round(item.norm_y * pageH),
+      width: resolvedWidth,
+      height: resolvedHeight,
+    };
+  }
+
+  // Fallback coordinates if normalized data is completely missing
   return {
-    x:      Math.round((item.pos_x  || (side === 'left' ? 20 : 30)) * scaleX),
-    y:      Math.round((item.pos_y  || 60) * scaleY),
-    width:  Math.round((item.width  || 200) * scaleX),
-    height: Math.round((item.height || 160) * scaleY),
+    x: Math.round((item.pos_x || (side === 'left' ? 20 : 30)) * scaleX),
+    y: Math.round((item.pos_y || 60) * scaleY),
+    width: resolvedWidth,
+    height: resolvedHeight,
   };
 }
-
-// ── Helpers ────────────────────────────────────────────────────────────────
 
 function formatLogDate(dateStr) {
   if (!dateStr) return { weekday: 'Loading...', full: 'Date pending' };
@@ -50,50 +58,143 @@ function formatLogDate(dateStr) {
   };
 }
 
-// ── Lazy-load JSZip only when needed ──────────────────────────────────────
-// We import dynamically to avoid bloating the main bundle.
-async function loadJSZip() {
-  // JSZip is loaded from CDN via a script tag if not already available.
-  // If you have it installed via npm, replace with: import JSZip from 'jszip'
-  if (window.JSZip) return window.JSZip;
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-    script.onload = () => resolve(window.JSZip);
-    script.onerror = () => reject(new Error('Failed to load JSZip'));
-    document.head.appendChild(script);
+// ── toDataURL: fetches any same-origin URL and converts to a data URL ──────
+async function toDataURL(src) {
+  try {
+    const res = await fetch(src, { credentials: 'include' });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror  = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+// ── CHANGE 1: fetchStickerAsDataURL — fallback now uses a RELATIVE path ───
+// Root cause of chequered stickers in export: the previous fallback used
+// `${BACKEND_URL}/assets/tape/...` (localhost:5000) which is cross-origin.
+// html2canvas with allowTaint:false drops cross-origin images, leaving a
+// chequered void. Fix: use a relative path `/assets/tape/...` so the
+// request goes through the React dev proxy and is same-origin to the browser.
+// In production (React and Express on the same host) this also works correctly.
+async function fetchStickerAsDataURL(assetPath) {
+  const filename = assetPath.split('/').pop();
+
+  // Try the backend proxy route first (if you've added it to Express)
+  const proxyUrl = `/api/scrapbook/asset-proxy/${encodeURIComponent(filename)}`;
+  try {
+    const res = await fetch(proxyUrl, { credentials: 'include' });
+    if (res.ok) {
+      const blob = await res.blob();
+      if (blob.size > 100) {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror  = () => resolve(null);
+          reader.readAsDataURL(blob);
+        });
+      }
+    }
+  } catch { /* proxy not set up yet — fall through */ }
+
+  // CHANGE 1: Use relative path so the React dev proxy forwards the request
+  // to Express on the same origin — avoids CORS entirely.
+  return toDataURL(`/assets/tape/${filename}`);
+}
+
+// ── extractVideoPoster — unchanged from original ──────────────────────────
+async function extractVideoPoster(filePath) {
+  return new Promise(async (resolve) => {
+    let objectUrl = null;
+    try {
+      const res = await fetch(`/${filePath}`, { credentials: 'include' });
+      if (!res.ok) { resolve(null); return; }
+      const blob = await res.blob();
+      objectUrl = URL.createObjectURL(blob);
+
+      const vid = document.createElement('video');
+      vid.style.cssText = 'position:fixed;opacity:0;pointer-events:none;width:1px;height:1px;top:-9999px;left:-9999px;';
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.preload = 'auto';
+      document.body.appendChild(vid);
+
+      const cleanup = () => {
+        try { document.body.removeChild(vid); } catch {}
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+      };
+
+      const timeout = setTimeout(() => { cleanup(); resolve(null); }, 20000);
+
+      vid.addEventListener('error', () => { clearTimeout(timeout); cleanup(); resolve(null); });
+
+      vid.addEventListener('loadedmetadata', () => {
+        const safeTime = Math.min(0.1, (vid.duration || 1) * 0.05);
+        vid.currentTime = safeTime;
+      }, { once: true });
+
+      vid.addEventListener('seeked', () => {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          try {
+            const W = vid.videoWidth;
+            const H = vid.videoHeight;
+            if (!W || !H) { clearTimeout(timeout); cleanup(); resolve(null); return; }
+            const cvs = document.createElement('canvas');
+            cvs.width  = W;
+            cvs.height = H;
+            cvs.getContext('2d').drawImage(vid, 0, 0, W, H);
+            const dataUrl = cvs.toDataURL('image/jpeg', 0.85);
+            clearTimeout(timeout);
+            cleanup();
+            resolve(dataUrl);
+          } catch {
+            clearTimeout(timeout);
+            cleanup();
+            resolve(null);
+          }
+        }));
+      }, { once: true });
+
+      vid.src = objectUrl;
+      vid.load();
+    } catch {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      resolve(null);
+    }
   });
 }
 
 // ── Scrapbook Page ─────────────────────────────────────────────────────────
-
 function ScrapbookPage({ leftLog, rightLog, leftRef, rightRef }) {
   return (
     <div className="sb-spread">
       <div className="sb-page sb-page--left" ref={leftRef}>
-        {leftLog ? (
-          <LogPage key={`left-${leftLog.log_date}`} log={leftLog} side="right" />
-        ) : (
-          <div className="sb-page-empty" />
-        )}
+        {leftLog
+          ? <LogPage key={`left-${leftLog.log_date}`}  log={leftLog}  side="right"  />
+          : <div className="sb-page-empty" />}
       </div>
       <div className="sb-spine" />
       <div className="sb-page sb-page--right" ref={rightRef}>
-        {rightLog ? (
-          <LogPage key={`right-${rightLog.log_date}`} log={rightLog} side="right" />
-        ) : (
-          <div className="sb-page-empty" />
-        )}
+        {rightLog
+          ? <LogPage key={`right-${rightLog.log_date}`} log={rightLog} side="right" />
+          : <div className="sb-page-empty" />}
       </div>
     </div>
   );
 }
 
 // ── Individual log page ────────────────────────────────────────────────────
-
 function LogPage({ log, side }) {
   const [detail,  setDetail]  = useState(null);
   const [loading, setLoading] = useState(true);
+  const [stickerDataURLs, setStickerDataURLs] = useState({});
+  const [photoDataURLs,   setPhotoDataURLs]   = useState({});
+  const [videoPosters,    setVideoPosters]    = useState({});
   const display = formatLogDate(log.log_date);
 
   useEffect(() => {
@@ -102,10 +203,32 @@ function LogPage({ log, side }) {
       setLoading(true);
       try {
         const res = await fetch(`${API}/logs/${log.log_date}`, { credentials: 'include' });
-        if (res.ok && !cancelled) {
-          const data = await res.json();
-          setDetail(data);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setDetail(data);
+
+        if (data.stickers?.length) {
+          const entries = await Promise.all(
+            data.stickers.map(async (s) => [s.id, await fetchStickerAsDataURL(s.asset_path)])
+          );
+          if (!cancelled) setStickerDataURLs(Object.fromEntries(entries));
         }
+
+        if (data.photos?.length) {
+          const entries = await Promise.all(
+            data.photos.map(async (p) => [p.id, await toDataURL(`/${p.file_path}`)])
+          );
+          if (!cancelled) setPhotoDataURLs(Object.fromEntries(entries));
+        }
+
+        if (data.videos?.length) {
+          const entries = await Promise.all(
+            data.videos.map(async (v) => [v.id, await extractVideoPoster(v.file_path)])
+          );
+          if (!cancelled) setVideoPosters(Object.fromEntries(entries));
+        }
+
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -117,63 +240,44 @@ function LogPage({ log, side }) {
   return (
     <div className="sb-log-page">
       {loading && <div className="sb-log-loading">…</div>}
-
       {!loading && detail && (
         <>
-          {/* ── Photos — no auto washi tape ── */}
-          {/* FIX: WashiTapeDecor removed. Photos render cleanly without
-              automatic tape. Only explicitly placed sticker assets appear
-              as tape/decoration elements. */}
           {detail.photos?.map((photo) => {
             const geo = resolveGeometry(photo, side);
+            const imgSrc = photoDataURLs[photo.id] || `/${photo.file_path}`;
             return (
               <div key={photo.id} className="sb-stamp-wrap" style={{
-                top:       `${geo.y}px`,
-                left:      `${geo.x}px`,
+                top: `${geo.y}px`, left: `${geo.x}px`,
                 transform: `rotate(${photo.rotation || 0}deg)`,
               }}>
                 <div className="sb-stamp" style={{ width: `${geo.width}px`, height: `${geo.height}px` }}>
-                  <img
-                    src={`/${photo.file_path}`}
-                    alt={photo.original_name || 'memory'}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
+                  <img src={imgSrc} alt={photo.original_name || 'memory'}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </div>
               </div>
             );
           })}
 
-          {/* ── Videos — FIX: enforce min-height to prevent thin videos ── */}
           {detail.videos?.map(video => {
-            const geo = resolveGeometry(video, side);
-            // FIX: enforce aspect-ratio aware minimum height (5:4 = 80%)
+            const geo  = resolveGeometry(video, side);
             const minH = Math.max(geo.height, Math.round(geo.width * 0.8), 100);
             return (
-              <div key={video.id} className="sb-media-item sb-video-item" style={{
-                top:       `${geo.y}px`,
-                left:      `${geo.x}px`,
-                width:     `${geo.width}px`,
-                height:    `${minH}px`,
-                zIndex:    video.z_index || 1,
-                transform: `rotate(${video.rotation || 0}deg)`,
-              }}>
-                <video src={`/${video.file_path}`} controls muted playsInline
-                  style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }} />
-              </div>
+              <VideoItem
+                key={video.id}
+                video={video}
+                geo={{ ...geo, height: minH }}
+                posterSrc={videoPosters[video.id] ?? null}
+              />
             );
           })}
 
-          {/* ── Audio ── */}
           {detail.audio?.map(audio => {
             const geo = resolveGeometry(audio, side);
             return (
               <div key={audio.id} className="sb-media-item sb-audio-item" style={{
-                top:       `${geo.y}px`,
-                left:      `${geo.x}px`,
-                width:     `${geo.width}px`,
-                height:    `${Math.max(geo.height, 70)}px`,
-                zIndex:    audio.z_index || 1,
-                transform: `rotate(${audio.rotation || 0}deg)`,
+                top: `${geo.y}px`, left: `${geo.x}px`,
+                width: `${geo.width}px`, height: `${Math.max(geo.height, 70)}px`,
+                zIndex: audio.z_index || 1, transform: `rotate(${audio.rotation || 0}deg)`,
               }}>
                 <div className="sb-audio-card">
                   <span className="sb-audio-label">🎵 {audio.original_name || 'Audio'}</span>
@@ -183,20 +287,15 @@ function LogPage({ log, side }) {
             );
           })}
 
-          {/* ── Answers — FIX: blue washi matching DayLog canvas ── */}
           {detail.answers?.map(answer => {
             const geo = resolveGeometry(answer, side);
             return (
               <div key={answer.id} className="sb-answer-wrap" style={{
-                top:       `${geo.y}px`,
-                left:      `${geo.x}px`,
-                width:     `${geo.width}px`,
-                minHeight: `${geo.height}px`,
-                zIndex:    answer.z_index || 1,
-                transform: `rotate(${answer.rotation || 0}deg)`,
+                top: `${geo.y}px`, left: `${geo.x}px`,
+                width: `${geo.width}px`, minHeight: `${geo.height}px`,
+                zIndex: answer.z_index || 1, transform: `rotate(${answer.rotation || 0}deg)`,
               }}>
                 <div className="sb-answer-prompt">{answer.prompt_text}:</div>
-                {/* FIX: sb-answer-washi is now blue to match DayLog's .dl-canvas-washi */}
                 <div className="sb-answer-washi">
                   <span className="sb-answer-text">{answer.answer_text}</span>
                 </div>
@@ -204,48 +303,46 @@ function LogPage({ log, side }) {
             );
           })}
 
-          {/* ── Stickers (art assets from Magic Library) ── */}
+          {/* Stickers */}
           {detail.stickers?.map(sticker => {
             const geo = resolveGeometry(sticker, side);
+            const imgSrc = stickerDataURLs[sticker.id];
+            
+            // Fallback securely to the backend URL if the DataURL hasn't loaded
+            const finalSrc = imgSrc || `${BACKEND_URL}/assets/tape/${sticker.asset_path.split('/').pop()}`;
+
             return (
               <div key={sticker.id} className="sb-sticker" style={{
-                top:       `${geo.y}px`,
-                left:      `${geo.x}px`,
-                width:     `${geo.width}px`,
-                height:    `${geo.height}px`,
-                zIndex:    sticker.z_index || 2,
+                position: 'absolute',
+                top: `${geo.y}px`, 
+                left: `${geo.x}px`,
+                width: `${geo.width}px`, 
+                height: `${geo.height}px`,
+                zIndex: sticker.z_index || 2, 
                 transform: `rotate(${sticker.rotation || 0}deg)`,
-              }}>
-                <img
-                  src={`${BACKEND_URL}/assets/tape/${sticker.asset_path.split('/').pop()}`}
-                  alt={sticker.asset_name}
-                  onError={e => { e.target.style.display = 'none'; }}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                />
-              </div>
+                
+                // THE FIX: Use background properties instead of an <img> tag 
+                // so html2canvas respects the original aspect ratio
+                backgroundImage: `url("${finalSrc}")`,
+                backgroundSize: 'contain',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat'
+              }} />
             );
           })}
 
-          {/* ── Emoji notes (streak stickers) ── */}
           {detail.notes?.filter(n => n.content?.startsWith('EMOJI:')).map(note => {
             const geo   = resolveGeometry(note, side);
             const emoji = note.content.replace('EMOJI:', '');
             const scaledFont = Math.round((note.font_size || 48) * (SB_PAGE_CONTENT_WIDTH / CANVAS_REF_WIDTH));
             return (
               <div key={note.id} style={{
-                position:   'absolute',
-                top:        `${geo.y}px`,
-                left:       `${geo.x}px`,
-                width:      `${geo.width}px`,
-                height:     `${geo.height}px`,
-                fontSize:   `${scaledFont}px`,
-                display:    'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                lineHeight: 1,
-                userSelect: 'none',
-                zIndex:     note.z_index || 2,
-                transform:  `rotate(${note.rotation || 0}deg)`,
+                position: 'absolute', top: `${geo.y}px`, left: `${geo.x}px`,
+                width: `${geo.width}px`, height: `${geo.height}px`,
+                fontSize: `${scaledFont}px`, display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                lineHeight: 1, userSelect: 'none',
+                zIndex: note.z_index || 2, transform: `rotate(${note.rotation || 0}deg)`,
               }}>
                 {emoji}
               </div>
@@ -253,8 +350,6 @@ function LogPage({ log, side }) {
           })}
         </>
       )}
-
-      {/* FIX: date rendered AFTER all media so it always paints on top */}
       <div className={`sb-date ${side === 'left' ? 'sb-date--left' : 'sb-date--right'}`}>
         <span className="sb-date-weekday">{display.weekday}</span>
         <span className="sb-date-full">{display.full}</span>
@@ -263,192 +358,55 @@ function LogPage({ log, side }) {
   );
 }
 
-// ── Export / Share Modal ───────────────────────────────────────────────────
-// FIX: Three export options:
-//   1. PNG  — static screenshot (videos/audio skipped, noted)
-//   2. PDF  — print-ready via browser print dialog
-//   3. ZIP  — page screenshot + all video + audio files bundled together
-//             so nothing is lost. Uses JSZip loaded from CDN.
+// ── VideoItem ──────────────────────────────────────────────────────────────
+function VideoItem({ video, geo, posterSrc }) {
+  const [showVideo, setShowVideo] = useState(false);
 
-function ShareModal({ leftRef, rightRef, leftLog, rightLog, onClose }) {
-  const [exporting, setExporting]   = useState(false);
-  const [exportMsg, setExportMsg]   = useState('');
-
-  // ── Fetch a media file as a Blob for ZIP packaging ──────────────────────
-  const fetchBlob = async (url) => {
-    const res = await fetch(url, { credentials: 'include' });
-    if (!res.ok) throw new Error(`Failed to fetch ${url}`);
-    return res.blob();
+  const containerStyle = {
+    position: 'absolute',
+    top:      `${geo.y}px`,
+    left:     `${geo.x}px`,
+    width:    `${geo.width}px`,
+    height:   `${geo.height}px`,
+    zIndex:   video.z_index || 1,
+    transform:`rotate(${video.rotation || 0}deg)`,
+    overflow: 'hidden',
+    background: '#111',
+    borderRadius: '4px',
   };
 
-  // ── Capture a page to html2canvas ───────────────────────────────────────
-  const captureCanvas = async (ref) => {
-    if (!ref?.current) return null;
-    return html2canvas(ref.current, {
-      backgroundColor: '#faf5ee',
-      scale: 2,
-      useCORS: true,
-      imageTimeout: 30000,
-      allowTaint: false,
-      scrollX: -window.scrollX,
-      scrollY: -window.scrollY,
-      // Skip video/audio elements — html2canvas can't render them
-      ignoreElements: el => el.tagName === 'VIDEO' || el.tagName === 'AUDIO',
-    });
-  };
-
-  // ── PNG download ─────────────────────────────────────────────────────────
-  const exportPng = async (ref, logDate) => {
-    if (!ref?.current) return;
-    setExporting(true);
-    setExportMsg('Capturing page…');
-    try {
-      const canvas = await captureCanvas(ref);
-      if (!canvas) return;
-      canvas.toBlob(blob => {
-        if (!blob) { alert('Unable to create image.'); return; }
-        const url  = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url; link.download = `scrapbook-${logDate}.png`;
-        document.body.appendChild(link); link.click(); link.remove();
-        URL.revokeObjectURL(url);
-        onClose();
-      }, 'image/png');
-    } catch (err) {
-      console.error('PNG export error:', err);
-      alert('Unable to export PNG. Please try again.');
-    } finally { setExporting(false); setExportMsg(''); }
-  };
-
-  // ── ZIP export — screenshot + all media files ────────────────────────────
-  // FIX: This is the "download with videos" solution.
-  // We bundle the page screenshot (PNG) alongside all video and audio files
-  // from that log entry into a single ZIP archive. The user gets everything.
-  const exportZip = async (ref, log) => {
-    if (!ref?.current || !log) return;
-    setExporting(true);
-    setExportMsg('Loading JSZip…');
-    try {
-      const JSZip = await loadJSZip();
-      const zip = new JSZip();
-      const logDate = log.log_date;
-      const folder = zip.folder(`scrapbook-${logDate}`);
-
-      // 1. Screenshot of the page
-      setExportMsg('Capturing page screenshot…');
-      const canvas = await captureCanvas(ref);
-      if (canvas) {
-        const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-        if (pngBlob) folder.file('page-screenshot.png', pngBlob);
-      }
-
-      // 2. Fetch the actual log detail to get media file paths
-      setExportMsg('Fetching media files…');
-      const res = await fetch(`${API}/logs/${logDate}`, { credentials: 'include' });
-      if (res.ok) {
-        const detail = await res.json();
-
-        // 3. Add video files
-        if (detail.videos?.length) {
-          const videoFolder = folder.folder('videos');
-          for (const video of detail.videos) {
-            try {
-              setExportMsg(`Packaging video: ${video.original_name || video.id}…`);
-              const blob = await fetchBlob(`/${video.file_path}`);
-              const ext  = video.file_path.split('.').pop() || 'mp4';
-              const name = video.original_name || `video-${video.id}.${ext}`;
-              videoFolder.file(name, blob);
-            } catch (err) { console.warn('Could not fetch video:', video.file_path, err); }
-          }
-        }
-
-        // 4. Add audio files
-        if (detail.audio?.length) {
-          const audioFolder = folder.folder('audio');
-          for (const track of detail.audio) {
-            try {
-              setExportMsg(`Packaging audio: ${track.original_name || track.id}…`);
-              const blob = await fetchBlob(`/${track.file_path}`);
-              const ext  = track.file_path.split('.').pop() || 'mp3';
-              const name = track.original_name || `audio-${track.id}.${ext}`;
-              audioFolder.file(name, blob);
-            } catch (err) { console.warn('Could not fetch audio:', track.file_path, err); }
-          }
-        }
-
-        // 5. Add photo files
-        if (detail.photos?.length) {
-          const photoFolder = folder.folder('photos');
-          for (const photo of detail.photos) {
-            try {
-              const blob = await fetchBlob(`/${photo.file_path}`);
-              const ext  = photo.file_path.split('.').pop() || 'jpg';
-              const name = photo.original_name || `photo-${photo.id}.${ext}`;
-              photoFolder.file(name, blob);
-            } catch (err) { console.warn('Could not fetch photo:', photo.file_path, err); }
-          }
-        }
-      }
-
-      // 6. Generate and download
-      setExportMsg('Compressing ZIP…');
-      const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } });
-      const url  = URL.createObjectURL(zipBlob);
-      const link = document.createElement('a');
-      link.href = url; link.download = `scrapbook-${logDate}.zip`;
-      document.body.appendChild(link); link.click(); link.remove();
-      URL.revokeObjectURL(url);
-      onClose();
-    } catch (err) {
-      console.error('ZIP export error:', err);
-      alert('Unable to create ZIP. Please try again.');
-    } finally { setExporting(false); setExportMsg(''); }
-  };
-
-
-  const leftDate  = leftLog  ? formatLogDate(leftLog.log_date).full  : null;
-  const rightDate = rightLog ? formatLogDate(rightLog.log_date).full : null;
+  if (!posterSrc || showVideo) {
+    return (
+      <div className="sb-media-item sb-video-item" style={containerStyle}>
+        <video src={`/${video.file_path}`} controls autoPlay={showVideo} muted playsInline
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', objectFit: 'cover' }} />
+      </div>
+    );
+  }
 
   return (
-    <div className="sb-share-modal-overlay" onClick={onClose}>
-      <div className="sb-share-modal" onClick={e => e.stopPropagation()}>
-        <h3 className="sb-share-modal-title">Export your page</h3>
-        <p className="sb-share-modal-sub">Choose a format. Use ZIP to keep videos &amp; audio playable.</p>
-
-        {/* ── PNG ── */}
-        <div className="sb-share-section-label">Screenshot (PNG)</div>
-        <div className="sb-share-modal-options">
-          {leftLog  ? <button className="sb-share-page-btn" disabled={exporting} onClick={() => exportPng(leftRef, leftLog.log_date)}><span className="sb-share-page-icon">🖼</span><span className="sb-share-page-label">{leftDate}</span></button>
-                    : <div className="sb-share-page-btn sb-share-page-btn--empty">Empty</div>}
-          {rightLog ? <button className="sb-share-page-btn" disabled={exporting} onClick={() => exportPng(rightRef, rightLog.log_date)}><span className="sb-share-page-icon">🖼</span><span className="sb-share-page-label">{rightDate}</span></button>
-                    : <div className="sb-share-page-btn sb-share-page-btn--empty">Empty</div>}
-        </div>
-
-        {/* ── ZIP — includes videos + audio ── */}
-        <div className="sb-share-section-label">ZIP archive (screenshot + all media)</div>
-        <div className="sb-share-modal-options">
-          {leftLog  ? <button className="sb-share-page-btn sb-share-page-btn--zip" disabled={exporting} onClick={() => exportZip(leftRef, leftLog)}><span className="sb-share-page-icon">📦</span><span className="sb-share-page-label">{leftDate}</span><span className="sb-share-zip-badge">incl. video</span></button>
-                    : <div className="sb-share-page-btn sb-share-page-btn--empty">Empty</div>}
-          {rightLog ? <button className="sb-share-page-btn sb-share-page-btn--zip" disabled={exporting} onClick={() => exportZip(rightRef, rightLog)}><span className="sb-share-page-icon">📦</span><span className="sb-share-page-label">{rightDate}</span><span className="sb-share-zip-badge">incl. video</span></button>
-                    : <div className="sb-share-page-btn sb-share-page-btn--empty">Empty</div>}
-        </div>
-
-
-        {exporting && <p className="sb-share-exporting">{exportMsg || 'Working…'}</p>}
-        <button className="sb-share-modal-cancel" onClick={onClose}>Cancel</button>
+    <div className="sb-media-item sb-video-item" style={containerStyle}>
+      <img src={posterSrc} alt="video preview"
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      <div onClick={() => setShowVideo(true)} style={{
+        position: 'absolute', inset: 0, display: 'flex',
+        alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+        background: 'rgba(0,0,0,0.15)',
+      }}>
+        <span style={{ fontSize: '2rem', color: '#fff', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.7))' }}>▶</span>
       </div>
     </div>
   );
 }
 
 // ── Main Scrapbook Component ───────────────────────────────────────────────
-
 export default function Scrapbook() {
   const [logs,           setLogs]           = useState([]);
   const [loading,        setLoading]        = useState(true);
   const [error,          setError]          = useState(null);
   const [pageIndex,      setPageIndex]      = useState(0);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [pendingExport,  setPendingExport]  = useState(null);
 
   const leftPageRef  = useRef(null);
   const rightPageRef = useRef(null);
@@ -467,19 +425,144 @@ export default function Scrapbook() {
     load();
   }, []);
 
+  // When modal closes with a pending export, run after DOM has repainted
+  useEffect(() => {
+    if (!showShareModal && pendingExport) {
+      const { ref, log } = pendingExport;
+      setPendingExport(null);
+      requestAnimationFrame(() => requestAnimationFrame(async () => {
+        await runExportPng(ref, log.log_date);
+      }));
+    }
+  }, [showShareModal, pendingExport]);
+
+  // ── CHANGE 2: captureCanvas — target inner content div, no dimension overrides ──
+  // Root cause of the empty cream space + blur in the previous export:
+  //   - ref.current points to `.sb-page` which is a flex child spanning the full
+  //     column width (e.g. half the 800px spread = 400+px), but the items are
+  //     absolutely positioned within the inner `.sb-log-page` (400×520px).
+  //     getBoundingClientRect() was returning the wider flex-column size.
+  //   - Passing `width` and `height` from getBoundingClientRect locked html2canvas
+  //     into those wrong dimensions, then `scale` multiplied them — producing a
+  //     canvas with a large empty region that browsers show as blurry when scaled.
+  //
+  // Fix:
+  //   1. Query `.sb-log-page` — the actual content wrapper — and capture that
+  //      instead of the outer `.sb-page` container. Its offsetWidth/offsetHeight
+  //      match the content exactly (SB_PAGE_CONTENT_WIDTH × SB_PAGE_CONTENT_HEIGHT).
+  //   2. Remove the explicit `width`/`height`/`scrollX`/`scrollY` overrides so
+  //      html2canvas measures the target element from the DOM naturally.
+  //   3. Keep allowTaint:true so images that loaded in the browser are captured
+  //      even without CORS headers (toBlob is unaffected by taint).
+  //   4. scale stays at devicePixelRatio (≥2 on HiDPI) for crisp output.
+  
+  /*/////////////////////////////////
+  const captureCanvas = async (ref) => {
+    if (!ref?.current) return null;
+
+    // CHANGE 2a: target the inner content div, not the outer page container
+    const contentEl = ref.current.querySelector('.sb-log-page') || ref.current;
+
+    // Wait two paint frames to ensure the DOM is fully settled after modal close
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    return html2canvas(contentEl, {
+      // CHANGE 2b: NO explicit width/height — let html2canvas measure naturally
+      // CHANGE 2c: sharp output at native screen density (minimum 2×)
+      scale: Math.max(2, window.devicePixelRatio || 2),
+      // CHANGE 2d: allowTaint:true so browser-loaded images are captured
+      allowTaint:      true,
+      useCORS:         true,
+      backgroundColor: '#faf5ee',
+      imageTimeout:    30000,
+      logging:         false,
+      // Ignore raw <audio>/<video> tags; poster <img> is captured normally
+      ignoreElements: el => el.tagName === 'AUDIO' || el.tagName === 'VIDEO',
+    });
+  };
+  //////////////////////////// */
+
+  const captureCanvas = async (ref) => {
+    if (!ref?.current) return null;
+
+    const originalEl = ref.current.querySelector('.sb-log-page') || ref.current;
+
+    // 1. Create a detached wrapper to completely escape ALL of your app's CSS scaling/flexbox constraints
+    const printWrapper = document.createElement('div');
+    printWrapper.style.position = 'fixed';
+    printWrapper.style.top = '-9999px'; // Hide it far off-screen
+    printWrapper.style.left = '0';
+    printWrapper.style.width = `${SB_PAGE_CONTENT_WIDTH}px`;
+    printWrapper.style.height = `${SB_PAGE_CONTENT_HEIGHT}px`;
+    printWrapper.style.transform = 'none'; // Critical: Absolutely no scaling
+    printWrapper.style.background = '#faf5ee'; // Base background color
+
+    // 2. Deep clone the scrapbook page into this clean environment
+    const clone = originalEl.cloneNode(true);
+    clone.style.width = '100%';
+    clone.style.height = '100%';
+    clone.style.transform = 'none';
+    clone.style.maxWidth = 'none';
+
+    printWrapper.appendChild(clone);
+    document.body.appendChild(printWrapper);
+
+    // 3. Give the browser a split second to render the images and fonts inside the clone
+    await new Promise(r => setTimeout(r, 150));
+
+    try {
+      // 4. Take the perfect screenshot
+      return await html2canvas(clone, {
+        scale: Math.max(2, window.devicePixelRatio || 2),
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#faf5ee',
+        imageTimeout: 30000,
+        logging: false,
+        ignoreElements: el => el.tagName === 'AUDIO' || el.tagName === 'VIDEO',
+      });
+    } finally {
+      // 5. Clean up the invisible clone when finished
+      document.body.removeChild(printWrapper);
+    }
+  };
+
+  // ── CHANGE 4: runExportPng — removed ZIP branch, PNG only ────────────────
+  // All ZIP-related code (loadJSZip, runExportZip, exportZip) has been
+  // removed. Only PNG export remains.
+  const runExportPng = async (ref, logDate) => {
+    try {
+      const canvas = await captureCanvas(ref);
+      if (!canvas) return;
+      canvas.toBlob(blob => {
+        if (!blob) { alert('Unable to create image.'); return; }
+        const url  = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url; link.download = `scrapbook-${logDate}.png`;
+        document.body.appendChild(link); link.click(); link.remove();
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    } catch (err) {
+      console.error('PNG export error:', err);
+      alert('Unable to export PNG.');
+    }
+  };
+
+  // Queue an export: close modal first so the overlay is gone before capture
+  const queueExport = (ref, log) => {
+    setPendingExport({ ref, log });
+    setShowShareModal(false);
+  };
+
   const totalPages = Math.ceil(logs.length / 2);
   const leftLog    = logs[pageIndex * 2]     || null;
   const rightLog   = logs[pageIndex * 2 + 1] || null;
 
-  const goPrev = () => setPageIndex(p => Math.max(0, p - 1));
-  const goNext = () => setPageIndex(p => Math.min(totalPages - 1, p + 1));
-
   if (loading) return <div className="sb-loading"><span>📖</span><p>Opening your scrapbook…</p></div>;
   if (error)   return <div className="sb-error"><p>⚠️ {error}</p><button onClick={() => window.location.reload()}>Retry</button></div>;
-  if (logs.length === 0) return (
+  if (!logs.length) return (
     <div className="sb-empty">
-      <span>📖</span>
-      <h2>Your scrapbook is empty</h2>
+      <span>📖</span><h2>Your scrapbook is empty</h2>
       <p>Head over to Day Log to create your first entry!</p>
     </div>
   );
@@ -488,7 +571,7 @@ export default function Scrapbook() {
     <div className="sb-layout">
       <div className="sb-toolbar">
         <button className="sb-share-btn" onClick={() => setShowShareModal(true)}>
-          Share / Export
+          Export
         </button>
       </div>
 
@@ -503,20 +586,59 @@ export default function Scrapbook() {
       </div>
 
       <div className="sb-nav">
-        <button className="sb-arrow sb-arrow--left"  onClick={goPrev} disabled={pageIndex === 0} aria-label="Previous page">◀</button>
+        <button className="sb-arrow sb-arrow--left"  onClick={() => setPageIndex(p => Math.max(0, p - 1))}
+          disabled={pageIndex === 0} aria-label="Previous page">◀</button>
         <span className="sb-page-indicator">{pageIndex + 1} / {totalPages}</span>
-        <button className="sb-arrow sb-arrow--right" onClick={goNext} disabled={pageIndex >= totalPages - 1} aria-label="Next page">▶</button>
+        <button className="sb-arrow sb-arrow--right" onClick={() => setPageIndex(p => Math.min(totalPages - 1, p + 1))}
+          disabled={pageIndex >= totalPages - 1} aria-label="Next page">▶</button>
       </div>
 
       {showShareModal && (
-        <ShareModal
-          leftRef={leftPageRef}
-          rightRef={rightPageRef}
+        <ExportModal
           leftLog={leftLog}
           rightLog={rightLog}
+          leftRef={leftPageRef}
+          rightRef={rightPageRef}
+          onExport={queueExport}
           onClose={() => setShowShareModal(false)}
         />
       )}
+    </div>
+  );
+}
+
+// ── CHANGE 5: ExportModal — ZIP section removed entirely ─────────────────
+// Only the PNG screenshot option remains. The onExport signature is simplified
+// to (ref, log) — no type argument needed since there is only one export type.
+function ExportModal({ leftLog, rightLog, leftRef, rightRef, onExport, onClose }) {
+  const leftDate  = leftLog  ? formatLogDate(leftLog.log_date).full  : null;
+  const rightDate = rightLog ? formatLogDate(rightLog.log_date).full : null;
+
+  return (
+    <div className="sb-share-modal-overlay" onClick={onClose}>
+      <div className="sb-share-modal" onClick={e => e.stopPropagation()}>
+        <h3 className="sb-share-modal-title">Export your page</h3>
+
+        <div className="sb-share-section-label">Screenshot (PNG)</div>
+        <div className="sb-share-modal-options">
+          {leftLog
+            ? <button className="sb-share-page-btn"
+                onClick={() => onExport(leftRef, leftLog)}>
+                <span className="sb-share-page-icon">🖼</span>
+                <span className="sb-share-page-label">{leftDate}</span>
+              </button>
+            : <div className="sb-share-page-btn sb-share-page-btn--empty">Empty</div>}
+          {rightLog
+            ? <button className="sb-share-page-btn"
+                onClick={() => onExport(rightRef, rightLog)}>
+                <span className="sb-share-page-icon">🖼</span>
+                <span className="sb-share-page-label">{rightDate}</span>
+              </button>
+            : <div className="sb-share-page-btn sb-share-page-btn--empty">Empty</div>}
+        </div>
+
+        <button className="sb-share-modal-cancel" onClick={onClose}>Cancel</button>
+      </div>
     </div>
   );
 }

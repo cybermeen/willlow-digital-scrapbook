@@ -651,11 +651,52 @@ export default function DayLog({ user, streak: streakProp, claimingReward, onRew
     } finally { setSaving(false); }
   };
 
-  const handleReset = () => {
-    setAnswerText('');
-    setSaved(false);
-  };
+  const handleReset = async () => {
+    // 1. Confirm before wiping the canvas
+    const confirmed = window.confirm("Are you sure you want to clear your entire log for today? This cannot be undone.");
+    if (!confirmed) return;
 
+    setSaving(true);
+    
+    try {
+      // 2. Clear out all the local React state instantly so the canvas looks blank
+      setAnswerText('');
+      setPhotos([]);
+      setVideos([]);
+      setAudios([]);
+      setStickers([]);
+      setNotes([]);
+      setAnswers([]);
+      setSelectedId(null);
+      setSaved(false);
+
+      // 3. Send delete requests to the backend to permanently erase the items
+      // (Using Promise.all so they process in parallel and don't slow down the app)
+      await Promise.all([
+        ...photos.map(p => fetch(`${API}/photos/${p.id}`, { method: 'DELETE', credentials: 'include' })),
+        ...videos.map(v => fetch(`${API}/videos/${v.id}`, { method: 'DELETE', credentials: 'include' })),
+        ...audios.map(a => fetch(`${API}/audio/${a.id}`, { method: 'DELETE', credentials: 'include' })),
+        ...stickers.map(s => fetch(`${API}/stickers/${s.id}`, { method: 'DELETE', credentials: 'include' })),
+        ...notes.map(n => fetch(`${API}/notes/${n.id}`, { method: 'DELETE', credentials: 'include' })),
+        ...answers.map(a => fetch(`${API}/prompts/answer/${a.id}`, { // Notice we delete the answers too
+            method: 'PATCH', // Assuming PATCH is how you update answers
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ answer_text: '' }) // Clear the text in DB
+        })) 
+      ]);
+
+      // 4. Force a fresh save of the now-empty layout
+      await handleSave();
+      
+    } catch (err) {
+      console.error('Reset error:', err);
+      alert('There was an issue fully resetting your log. Please refresh the page.');
+    } finally {
+      setSaving(false);
+    }
+  };
+  
   // ── Render ──────────────────────────────────────────────────────────────
 
   if (loading) {
