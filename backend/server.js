@@ -43,6 +43,10 @@ app.use('/api/scrapbook', scrapbookRoutes);
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/assets',  express.static(path.join(__dirname, 'assets')));
 
-app.listen(PORT, () => {
+app.get('/', (req, res) => {
+    res.send('🚀 Backend API server is running perfectly on Docker!');
+});
+
+app.listen(PORT, '0.0.0.0',() => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
