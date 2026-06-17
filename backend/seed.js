@@ -30,6 +30,15 @@ const assets = [
   { name: 'Tape 9',  file: 'assets/tape/tape9.png',   reward: false },
   { name: 'Tape 10', file: 'assets/tape/tape10.png',  reward: false },
   { name: 'Tape 11', file: 'assets/tape/tape11.png',  reward: false },
+  { name: 'Tape 12', file: 'assets/tape/tape12.png',  reward: false },
+  { name: 'Tape 13', file: 'assets/tape/tape13.png',  reward: false },
+  { name: 'Tape 14', file: 'assets/tape/tape14.png',  reward: false },
+  { name: 'Tape 15', file: 'assets/tape/tape15.png',  reward: false },
+  { name: 'Tape 16', file: 'assets/tape/tape16.png',  reward: false },
+  { name: 'Tape 17', file: 'assets/tape/tape17.png',  reward: false },
+  { name: 'Tape 18', file: 'assets/tape/tape18.png',  reward: false },
+  { name: 'Tape 19', file: 'assets/tape/tape19.png',  reward: false },
+  { name: 'Tape 20', file: 'assets/tape/tape20.png',  reward: false },
 ];
 
 async function seed() {
@@ -45,12 +54,12 @@ async function seed() {
 
   // ── Art assets ───────────────────────────────────────────────────────────
  
-  // FIX 2: Delete any previously seeded assets whose file_path does NOT start
+  // Delete any previously seeded assets whose file_path does NOT start
   // with 'assets/tape/' — these are the old bad rows (empty file paths or
   // wrong paths) that were showing up as blank boxes in the Magic Library.
   // We do this BEFORE inserting new ones so we start from a clean state.
   //
-  // IMPORTANT: This only deletes art_assets rows that aren't referenced by
+  // This only deletes art_assets rows that aren't referenced by
   // any log_stickers row, so it won't break existing placed stickers.
   // If you want to also remove stickers using bad assets, uncomment the
   // second DELETE below.
