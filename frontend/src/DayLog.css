@@ -255,7 +255,7 @@
 }
 
 .dl-asset-btn {
-  background: #f5ede8;
+  background: #ffffff;
   border: 1.5px solid #d4b8ac;
   border-radius: 10px;
   padding: 0.4rem;
@@ -264,7 +264,6 @@
   align-items: center;
   justify-content: center;
   aspect-ratio: 1;
-  transition: transform 0.15s, border-color 0.15s;
 }
 
 .dl-asset-btn:hover {
