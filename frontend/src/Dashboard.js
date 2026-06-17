@@ -5,8 +5,6 @@ import DayLog from './DayLog';
 import Scrapbook from './Scrapbook';
 import './Dashboard.css';
 
-const BACKEND_URL = 'http://localhost:5000';
-
 function Dashboard({ user, onLogout }) {
   const [activeTab, setActiveTab] = useState('today');
 
@@ -65,7 +63,7 @@ function Dashboard({ user, onLogout }) {
       <header className="dashboard-header">
         <div className="dashboard-logo">
           <img
-            src={`${BACKEND_URL}/assets/logo/logo.png`}
+            src="/assets/logo/logo.png"
             alt="Willow logo"
             className="dashboard-logo-img"
           />

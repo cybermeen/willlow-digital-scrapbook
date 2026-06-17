@@ -45,7 +45,7 @@ function Signup({ onSignupSuccess, onSwitchToLogin }) {
   };
 
   const backgroundStyle = {
-    background: `url('/assets/background.webp') center/cover no-repeat`,
+    background: `url('/assets/background1.jpg') center/cover no-repeat`,
   };
 
   return (
@@ -58,9 +58,6 @@ function Signup({ onSignupSuccess, onSwitchToLogin }) {
             className="login-logo-img"
           />
           <h1 className="deco-title">Willow</h1>
-          <p className="deco-tagline">
-            Every journey begins with a single, gentle step.
-          </p>
         </div>
 
         <div className="form-wrapper">

@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import './Auth.css';
 
 const API_URL = '/api/auth';
-const BACKEND_URL = 'http://localhost:5000';
 
 function Login({ onLoginSuccess, onSwitchToSignup }) {
   const [email, setEmail] = useState('');

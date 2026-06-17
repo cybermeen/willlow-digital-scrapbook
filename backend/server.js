@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 5000;
 const allowedOrigin = process.env.FRONTEND_URL || 'http://localhost:3000';
 
 app.use(cors({
-  origin: allowedOrigin,
+  origin: process.env.FRONTEND_URL,
   credentials: true,
 }));
 
@@ -23,11 +23,13 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false,
+    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
-    sameSite: 'lax'
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', //allows cross-origin cookie sending
+    maxAge: 1000 * 60 * 60 * 24 * 7  //7-day session
   }
 }));
+
 
 // ROUTES
 const authRoutes      = require('./routes/authRoutes');
