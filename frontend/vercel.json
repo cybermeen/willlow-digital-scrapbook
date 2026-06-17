@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*",     "destination": "https://willlow-backend.onrender.com/api/:path*" },
+    { "source": "/assets/:path*",  "destination": "https://willlow-backend.onrender.com/assets/:path*" },
+    { "source": "/uploads/:path*", "destination": "https://willlow-backend.onrender.com/uploads/:path*" }
+  ]
+}

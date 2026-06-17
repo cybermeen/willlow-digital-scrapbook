@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import './Scrapbook.css';
 
-const BACKEND_URL = 'http://localhost:5000';
 const API = '/api/scrapbook';
 
 const CANVAS_REF_WIDTH  = 680;
@@ -309,7 +308,7 @@ function LogPage({ log, side }) {
             const imgSrc = stickerDataURLs[sticker.id];
             
             // Fallback securely to the backend URL if the DataURL hasn't loaded
-            const finalSrc = imgSrc || `${BACKEND_URL}/assets/tape/${sticker.asset_path.split('/').pop()}`;
+            const finalSrc = imgSrc || `/assets/tape/${sticker.asset_path.split('/').pop()}`;
 
             return (
               <div key={sticker.id} className="sb-sticker" style={{

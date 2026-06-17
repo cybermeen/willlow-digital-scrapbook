@@ -58,10 +58,10 @@ function Signup({ onSignupSuccess, onSwitchToLogin }) {
             className="login-logo-img"
           />
           <h1 className="deco-title">Willow</h1>
-          <p className="deco-tagline">
-            Every journey begins with a single, gentle step.
-          </p>
         </div>
+        <p className="deco-tagline">
+          Every journey begins with a single, gentle step.
+        </p>
 
         <div className="form-wrapper">
           <div className="form-header">
