@@ -1,8 +1,6 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-const { Pool } = require('pg');
-
 // Use the environment variable if it exists, otherwise fall back to local config
 const isProduction = process.env.NODE_ENV === 'production';
 
