@@ -7,6 +7,8 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // CORS — allow React dev server to send cookies
+const allowedOrigin = process.env.FRONTEND_URL || 'http://localhost:3000';
+
 app.use(cors({
   origin: process.env.FRONTEND_URL,
   credentials: true,
@@ -43,6 +45,10 @@ app.use('/api/scrapbook', scrapbookRoutes);
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/assets',  express.static(path.join(__dirname, 'assets')));
 
-app.listen(PORT, () => {
+app.get('/', (req, res) => {
+    res.send('🚀 Backend API server is running perfectly on Docker!');
+});
+
+app.listen(PORT, '0.0.0.0',() => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
