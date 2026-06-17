@@ -410,6 +410,26 @@ exports.updatePromptAnswer = async (req, res) => {
   }
 };
 
+exports.deletePromptAnswer = async (req, res) => {
+  try {
+    const { answerId } = req.params;
+    
+    // Check if it exists and belongs to the user
+    const ownership = await db.query(`SELECT log_id FROM prompt_answers WHERE id = $1`, [answerId]);
+    if (!ownership.rows.length) return res.status(404).json({ error: 'Not found' });
+    
+    const isOwner = await verifyLogOwnership(ownership.rows[0].log_id, req.user.id);
+    if (!isOwner) return res.status(403).json({ error: 'Access denied' });
+    
+    // Physically delete the row from the database
+    await db.query('DELETE FROM prompt_answers WHERE id = $1', [answerId]);
+    res.json({ message: 'Answer deleted' });
+  } catch (err) {
+    console.error('deletePromptAnswer error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
 // ── Stickers ───────────────────────────────────────────────────────────────
 
 exports.getArtAssets = async (req, res) => {

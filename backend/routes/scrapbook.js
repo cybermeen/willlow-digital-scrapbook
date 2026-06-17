@@ -33,6 +33,7 @@ router.delete('/notes/:noteId',     ctrl.deleteNote);
 router.get('/prompts/daily',                    ctrl.getDailyPrompt);
 router.post('/prompts/answer/:logId',           ctrl.savePromptAnswer);
 router.patch('/prompts/answer/:answerId',       ctrl.updatePromptAnswer);
+router.delete('/prompts/answer/:answerId',      ctrl.deletePromptAnswer); 
 
 // ── Stickers ──────────────────────────────────────────────────────────────────
 router.get('/assets',                   ctrl.getArtAssets);
