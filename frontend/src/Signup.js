@@ -44,26 +44,25 @@ function Signup({ onSignupSuccess, onSwitchToLogin }) {
     }
   };
 
+  const backgroundStyle = {
+    background: `radial-gradient(circle at top, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.76) 32%), url('/assets/background.webp') center/cover no-repeat`,
+  };
+
   return (
-    <div className="auth-container">
-      <div className="auth-panel auth-panel--deco">
-        <div className="deco-content">
-          <div className="deco-logo">🌿</div>
+    <div className="auth-container" style={backgroundStyle}>
+      <div className="auth-card auth-card--modal">
+        <div className="auth-card-header">
+          <img
+            src="/assets/logo/logo.png"
+            alt="Willow logo"
+            className="login-logo-img"
+          />
           <h1 className="deco-title">Willow</h1>
           <p className="deco-tagline">
-            Every journey begins with
-            <br />
-            a single, gentle step.
+            Every journey begins with a single, gentle step.
           </p>
-          <div className="deco-leaves" aria-hidden="true">
-            <span className="leaf leaf-1">🍃</span>
-            <span className="leaf leaf-2">🌱</span>
-            <span className="leaf leaf-3">🍀</span>
-          </div>
         </div>
-      </div>
 
-      <div className="auth-panel auth-panel--form">
         <div className="form-wrapper">
           <div className="form-header">
             <h2>Join Willow</h2>

@@ -64,7 +64,11 @@ function Dashboard({ user, onLogout }) {
     <div className="dashboard">
       <header className="dashboard-header">
         <div className="dashboard-logo">
-          <span>🌿</span>
+          <img
+            src={`${BACKEND_URL}/assets/logo/logo.png`}
+            alt="Willow logo"
+            className="dashboard-logo-img"
+          />
           <span className="dashboard-logo-name">Willow</span>
         </div>
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import './Auth.css';
 
 const API_URL = '/api/auth';
+const BACKEND_URL = 'http://localhost:5000';
 
 function Login({ onLoginSuccess, onSwitchToSignup }) {
   const [email, setEmail] = useState('');
@@ -37,26 +38,22 @@ function Login({ onLoginSuccess, onSwitchToSignup }) {
     }
   };
 
-  return (
-    <div className="auth-container">
-      <div className="auth-panel auth-panel--deco">
-        <div className="deco-content">
-          <div className="deco-logo">🌿</div>
-          <h1 className="deco-title">Willow</h1>
-          <p className="deco-tagline">
-            Growth doesn't always look like movement.
-            <br />
-            Some days, staying rooted is enough.
-          </p>
-          <div className="deco-leaves" aria-hidden="true">
-            <span className="leaf leaf-1">🍃</span>
-            <span className="leaf leaf-2">🌱</span>
-            <span className="leaf leaf-3">🍀</span>
-          </div>
-        </div>
-      </div>
+  const backgroundStyle = {
+    background: `radial-gradient(circle at top, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0) 100%), url('/assets/background.webp') center/cover no-repeat`,
+  };
 
-      <div className="auth-panel auth-panel--form">
+  return (
+    <div className="auth-container" style={backgroundStyle}>
+      <div className="auth-card auth-card--modal">
+        <div className="auth-card-header">
+          <img
+            src="/assets/logo/logo.png"
+            alt="Willow logo"
+            className="login-logo-img"
+          />
+          <span className="deco-title">Willow</span>
+        </div>
+
         <div className="form-wrapper">
           <div className="form-header">
             <h2>Welcome back</h2>

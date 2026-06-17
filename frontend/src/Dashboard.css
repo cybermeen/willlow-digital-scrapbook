@@ -3,7 +3,7 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #F9F6F0; /* Warmer, softer background */
+  background: #F7EDE3; 
   font-family: 'Nunito', sans-serif;
   color: #2D3A2D;
 }
@@ -36,6 +36,14 @@
   white-space: nowrap;
 }
 
+.dashboard-logo-img {
+  width: 49px;
+  height: 49px;
+  object-fit: contain;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
 /* ─── Nav ─────────────────────────────────────────────────── */
 .dashboard-nav {
   display: flex;
@@ -59,10 +67,6 @@
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
-}
-
-.nav-btn:hover { 
-  color: #ffffff; 
 }
 
 .nav-btn--active { 
@@ -128,7 +132,6 @@
 .coming-soon h2 { font-family: 'Cormorant Garamond', serif; font-size: 1.75rem; color: #7a8c7a; }
 .coming-soon p { font-size: 0.95rem; }
 
-/* Add this to the bottom of Dashboard.css[cite: 8] */
 
 .nav-btn {
   position: relative; /* Keep the dot positioned relative to the button[cite: 8] */

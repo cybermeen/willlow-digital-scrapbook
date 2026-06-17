@@ -1,98 +1,88 @@
 /* ─── Auth Layout ─────────────────────────────────────────── */
 
 .auth-container {
-  display: flex;
   min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
   font-family: 'Nunito', sans-serif;
-}
-
-/* ─── Left decorative panel ───────────────────────────────── */
-
-.auth-panel--deco {
-  flex: 0 0 38%;
-  background: linear-gradient(160deg, #3d5c3d 0%, #5c7a5c 40%, #7a9e7a 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem 2.5rem;
   position: relative;
   overflow: hidden;
 }
 
-.auth-panel--deco::before {
+.auth-container::before {
   content: '';
   position: absolute;
   inset: 0;
-  background-image:
-    radial-gradient(circle at 20% 80%, rgba(255,255,255,0.05) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(255,255,255,0.05) 0%, transparent 50%);
+  background: rgba(255, 255, 255, 0.36);
+  pointer-events: none;
 }
 
-.deco-content {
+.auth-card {
   position: relative;
-  text-align: center;
-  color: #fff;
+  width: min(100%, 450px);
+  border-radius: 28px;
+  overflow: hidden;
+  background: #F7EDE3;
+  box-shadow: 0 24px 60px rgba(45, 58, 45, 0.18);
+  backdrop-filter: blur(10px);
+  padding: 2rem;
+  padding-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
-.deco-logo {
-  font-size: 3.5rem;
-  margin-bottom: 0.5rem;
-  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.2));
+.auth-card-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.auth-card-header .login-logo-img {
+  width: 96px;
+  height: 96px;
+  border-radius: 22px;
 }
 
 .deco-title {
   font-family: 'Cormorant Garamond', serif;
-  font-size: 3rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  margin: 0 0 1.25rem;
-  color: #f0f5f0;
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #2d3d2d;
+  margin: 0;
 }
 
 .deco-tagline {
-  font-size: 1rem;
-  font-weight: 300;
-  line-height: 1.75;
-  color: rgba(255,255,255,0.82);
-  max-width: 220px;
-  margin: 0 auto 2.5rem;
+  max-width: 15rem;
+  color: #6c7b6c;
+  margin: 0;
 }
 
-.deco-leaves {
-  display: flex;
-  gap: 1.25rem;
-  justify-content: center;
-  font-size: 1.5rem;
+.auth-card .form-wrapper {
+  width: 100%;
 }
 
-.leaf {
-  display: inline-block;
-  animation: sway 4s ease-in-out infinite;
-}
-
-.leaf-1 { animation-delay: 0s; }
-.leaf-2 { animation-delay: 1.3s; }
-.leaf-3 { animation-delay: 2.6s; }
-
-@keyframes sway {
-  0%, 100% { transform: rotate(-6deg) translateY(0); }
-  50%       { transform: rotate(6deg)  translateY(-4px); }
-}
-
-/* ─── Right form panel ────────────────────────────────────── */
-
+.auth-panel,
+.auth-panel--deco,
 .auth-panel--form {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #faf9f6;
-  padding: 3rem 2rem;
+  display: none;
+}
+
+.login-logo-img {
+  width: 60%;
+  height: 60px;
+  object-fit: contain;
+  border-radius: 18px;
+  padding: 1rem;
+  flex-shrink: 0;
 }
 
 .form-wrapper {
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
 }
 
 /* ─── Form header ─────────────────────────────────────────── */
@@ -103,7 +93,7 @@
 
 .form-header h2 {
   font-family: 'Cormorant Garamond', serif;
-  font-size: 2.25rem;
+  font-size: 1.7rem;
   font-weight: 600;
   color: #2d3d2d;
   margin: 0 0 0.35rem;
@@ -136,7 +126,7 @@
   padding: 0.75rem 1rem;
   border: 1.5px solid #d4ddd4;
   border-radius: 10px;
-  background: #fff;
+  background: #faf9f6;
   font-family: 'Nunito', sans-serif;
   font-size: 0.97rem;
   color: #2d3d2d;
@@ -254,17 +244,36 @@
 
 /* ─── Responsive ──────────────────────────────────────────── */
 
+@media (max-width: 900px) {
+  .auth-card {
+    flex-direction: column;
+    min-height: auto;
+  }
+
+  .auth-panel {
+    padding: 2rem;
+  }
+}
+
 @media (max-width: 640px) {
-  .auth-container { flex-direction: column; }
+  .auth-container {
+    padding: 1rem;
+  }
+
+  .auth-card {
+    width: 100%;
+    border-radius: 24px;
+  }
 
   .auth-panel--deco {
-    flex: 0 0 auto;
-    padding: 2.5rem 2rem;
+    padding: 1.8rem 1.5rem;
   }
 
   .deco-tagline { display: none; }
   .deco-leaves  { display: none; }
   .deco-title   { font-size: 2.25rem; }
 
-  .auth-panel--form { padding: 2rem 1.5rem; }
+  .auth-panel--form {
+    padding: 1.8rem 1.5rem;
+  }
 }

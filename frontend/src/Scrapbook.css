@@ -6,7 +6,7 @@
   min-height: calc(100vh - 80px);
   padding: 2rem 1rem;
   gap: 1.5rem;
-  background: #f0ebe0;
+  background: #F7EDE3;
 }
 
 .sb-toolbar {
@@ -161,9 +161,6 @@
 .sb-date-full    { display: block; font-size: 0.7rem; font-family: 'Nunito', sans-serif; letter-spacing: 1px; color: #8a9a8a; margin-top: 0.2rem; }
 
 /* ─── Stamps / Photos ───────────────────────────────────────── */
-/* FIX: sb-stamp-wrap no longer wraps a WashiTapeDecor component.
-   Washi tape elements are only rendered for explicitly placed sticker assets.
-   Photos appear cleanly without any automatic tape decoration. */
 .sb-stamp-wrap {
   position: absolute;
   display: flex;
@@ -172,7 +169,6 @@
 }
 
 /* ── Washi tape: only used for explicitly placed sticker assets ── */
-/* (WashiTapeDecor component has been removed from photo rendering) */
 .sb-washi-tape {
   width: 70px; height: 20px; border-radius: 2px; opacity: 0.9;
   margin-left: 10px; margin-bottom: -8px; position: relative;
@@ -211,7 +207,7 @@
   background: #fff;
 }
 
-/* FIX: video items — enforce display:block so height is respected properly */
+/* Video items — enforce display:block so height is respected properly */
 .sb-video-item video {
   width: 100%;
   height: 100%;
@@ -239,8 +235,8 @@
   text-overflow: ellipsis;
 }
 
-/* ─── Prompt Answer — FIX: blue washi matching DayLog canvas ───────────── */
-/* This must match .dl-canvas-washi in DayLog.css exactly. */
+/* ─── Prompt Answer ───────────── */
+
 .sb-answer-prompt {
   font-style: italic;
   font-size: 0.72rem;
@@ -251,7 +247,6 @@
 }
 
 .sb-answer-washi {
-  /* FIX: blue gradient — was green (#e8f0e8), now matches DayLog's blue washi tape */
   background: linear-gradient(135deg, #aad4e8 0%, #b0ddf0 50%, #8fcce0 100%);
   border-radius: 3px;
   padding: 0.6rem 1rem;
@@ -328,7 +323,7 @@
 .sb-log-loading { font-family: 'Nunito', sans-serif; font-size: 0.85rem; color: #b0a090; padding: 2rem; text-align: center; }
 
 /* ═══════════════════════════════════════════════════════════════
-   FIX: Export / Share Modal — multiple format options
+   Export / Share Modal — multiple format options
    ═══════════════════════════════════════════════════════════════ */
 
 .sb-share-modal-overlay {
@@ -380,7 +375,7 @@
   margin: 0;
 }
 
-/* FIX: video notice banner */
+/* Video notice banner */
 .sb-share-video-notice {
   font-family: 'Nunito', sans-serif;
   font-size: 0.75rem;
