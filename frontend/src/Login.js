@@ -39,7 +39,7 @@ function Login({ onLoginSuccess, onSwitchToSignup }) {
   };
 
   const backgroundStyle = {
-    background: `radial-gradient(circle at top, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0) 100%), url('/assets/background.webp') center/cover no-repeat`,
+    background: `url('/assets/background1.jpg') center/cover no-repeat`,
   };
 
   return (

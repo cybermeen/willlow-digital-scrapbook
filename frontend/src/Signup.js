@@ -45,7 +45,7 @@ function Signup({ onSignupSuccess, onSwitchToLogin }) {
   };
 
   const backgroundStyle = {
-    background: `radial-gradient(circle at top, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.76) 32%), url('/assets/background.webp') center/cover no-repeat`,
+    background: `url('/assets/background.webp') center/cover no-repeat`,
   };
 
   return (
