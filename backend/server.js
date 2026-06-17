@@ -23,11 +23,13 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false,
+    secure: true,
     httpOnly: true,
-    sameSite: 'lax'
+    sameSite: 'none', //allows cross-origin cookie sending
+    maxAge: 1000 * 60 * 60 * 24 * 7  //7-day session
   }
 }));
+
 
 // ROUTES
 const authRoutes      = require('./routes/authRoutes');
