@@ -82,7 +82,6 @@ exports.getAllLogs = async (req, res) => {
       `SELECT
         dl.id,
         dl.log_date,
-        dl.mood,
         dl.achievement_unlocked,
         COUNT(DISTINCT lp.id) AS photo_count,
         COUNT(DISTINCT ln.id) AS note_count
@@ -104,12 +103,12 @@ exports.getAllLogs = async (req, res) => {
 exports.updateLog = async (req, res) => {
   try {
     const { logId } = req.params;
-    const { mood, layout_style } = req.body;
+    const { layout_style } = req.body;
     const isOwner = await verifyLogOwnership(logId, req.user.id);
     if (!isOwner) return res.status(403).json({ error: 'Access denied' });
     const result = await db.query(
-      `UPDATE day_logs SET mood = COALESCE($1, mood), layout_style = COALESCE($2, layout_style), updated_at = NOW() WHERE id = $3 RETURNING *`,
-      [mood, layout_style, logId]
+      `UPDATE day_logs SET layout_style = COALESCE($1, layout_style), updated_at = NOW() WHERE id = $2 RETURNING *`,
+      [layout_style, logId]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -507,7 +506,7 @@ exports.saveLayout = async (req, res) => {
   const client = await db.pool.connect();
   try {
     const { logId } = req.params;
-    const { photos, videos, audios, notes, stickers, answers, layout_style, mood } = req.body;
+    const { photos, videos, audios, notes, stickers, answers, layout_style } = req.body;
 
     const isOwner = await verifyLogOwnership(logId, req.user.id);
     if (!isOwner) return res.status(403).json({ error: 'Access denied' });
@@ -607,8 +606,8 @@ exports.saveLayout = async (req, res) => {
     }
 
     await client.query(
-      `UPDATE day_logs SET layout_style=COALESCE($1,layout_style), mood=COALESCE($2,mood), updated_at=NOW() WHERE id=$3`,
-      [layout_style, mood, logId]
+      `UPDATE day_logs SET layout_style=COALESCE($1,layout_style), updated_at=NOW() WHERE id=$2`,
+      [layout_style, logId]
     );
     await client.query('COMMIT');
     res.json({ message: 'Layout saved successfully' });
