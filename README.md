@@ -4,25 +4,6 @@ Willow is a personal, daily-use web application that combines productivity with 
 
 ---
 
-## Features
-
-### Workflow 1 — User Onboarding & Authentication + Daily Planning & Task Management
-Secure account creation, authentication, and session-based login/logout management. Includes credential validation and a personalized dashboard upon login. Also features comprehensive to-do list functionality allowing users to create, view, edit, and complete tasks. Tasks are categorized by timeframe (**Today**, **This Week**, **Upcoming**) and support priority levels. Completed tasks are visually distinguished.
-
-### Workflow 2 — Streaks, Rewards & Achievements
-A gamification layer that tracks daily streaks, awards rewards, and unlocks exclusive stickers and other incentives when users complete their daily tasks.
-
-### Workflow 3 — Daily Log Scrapbooking
-A digital canvas for users to record and decorate moments from their day:
-
-- **Photos** — Upload and freely position images on the daily canvas
-- **Reflective Prompts** — Answer short, randomized daily prompts to encourage reflection
-- **Art Assets & Stickers** — Decorate logs with an unlocked ,agic library of stickers
-- **Layout Customization** — Flexible, draggable arrangement that saves exact coordinates (x/y, rotation, z-index) of all canvas elements
-- **Achievements** — Unlock exclusive stickers and rewards by completing all daily tasks
-
----
-
 ##  Tech Stack
 
 | Layer | Technology |
@@ -100,12 +81,3 @@ npm install
 npm start
 ```
 ---
-
-##  Team Contributions
-
-### Aabeerah Iqbal
-- **Workflow 1 — User Authentication + Daily Planning & Task Management:** Developed the secure user authentication system, including registration, credential validation, password hashing with bcrypt, and session-based login/logout flows. Also engineered the task tracking system, including the database schema, API routes for creating/editing/deleting tasks, and categorization logic (Today, This Week, Upcoming, Completed).
-- **Workflow 2 — Streaks, Rewards & Achievements:** Built the gamification layer of the application, including streak tracking, reward logic, and the achievements system that unlocks exclusive stickers and other incentives upon completing daily tasks.
-
-### Zarmeen Rahman
-- **Workflow 3 — Daily Log Scrapbooking:** Architected and implemented the digital scrapbook feature. Built backend support for photo uploads via `multer`, reflective prompt generation, note-taking, sticker placements, and layout-saving endpoints that persist absolute positional data (x/y coordinates, rotation, z-index) for all canvas elements.
